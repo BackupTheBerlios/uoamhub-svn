@@ -174,7 +174,8 @@ static void kill_client(struct domain *domain, unsigned n) {
     assert(domain->num_clients > 0);
     assert(n < domain->num_clients);
 
-    printf("kill_client num=%u\n", domain->num_clients);
+    if (verbose > 0)
+        printf("kill_client %u\n", client->id);
 
     close(domain->clients[n].sockfd);
 
@@ -299,9 +300,6 @@ int main(int argc, char **argv) {
 
     /* main loop */
     do {
-        if (verbose > 0)
-            printf("select()\n");
-
         FD_ZERO(&rfds);
         FD_SET(sockfd, &rfds);
         max_fd = sockfd;
@@ -318,9 +316,6 @@ int main(int argc, char **argv) {
             fprintf(stderr, "select failed: %s\n", strerror(errno));
             exit(1);
         }
-
-        if (verbose > 0)
-            printf("after select() = %d\n", ret);
 
         if (ret > 0) {
             if (FD_ISSET(sockfd, &rfds)) {
@@ -357,7 +352,7 @@ int main(int argc, char **argv) {
                         struct packet_header *header = (struct packet_header*)buffer;
 
                         nbytes = recv(client->sockfd, buffer, sizeof(buffer), 0);
-                        printf("packet: client=%u/%u len=%ld\n", z, w, (long)nbytes);
+                        printf("packet from client %u len=%ld\n", client->id, (long)nbytes);
                         for (i = 0; i < nbytes; i++) {
                             printf("%02x ", buffer[i]);
                             if (i % 16 == 15)
@@ -366,7 +361,7 @@ int main(int argc, char **argv) {
                         printf("\n\n");
 
                         if (nbytes == 0) {
-                            printf("client disconnected\n");
+                            printf("client %u disconnected\n", client->id);
                             kill_client(&domains[z], w--);
                             client--;
                             continue;
@@ -377,7 +372,7 @@ int main(int argc, char **argv) {
 
                         if (header->five != 0x05 || header->zero1 != 0x00 ||
                             header->three != 0x03 || header->ten != 0x10) {
-                            printf("wrong packet, killing client\n");
+                            printf("malformed packet, killing client\n");
                             kill_client(&domains[z], w--);
                             client--;
                             continue;
@@ -400,17 +395,14 @@ int main(int argc, char **argv) {
                                 memcpy(buffer2, packet_poll, sizeof(packet_poll));
                                 pos = sizeof(packet_poll);
 
-                                printf("making poll packet pos=%u: %u\n", pos, domains[z].num_clients);
                                 for (f = 0; f < domains[z].num_clients; f++) {
                                     if (domains[z].clients[f].info.noip.name[0] == 0)
                                         continue;
-                                    printf("adding client info %s\n", domains[z].clients[f].info.noip.name);
                                     memcpy(buffer2 + pos, &domains[z].clients[f].info.noip,
                                            sizeof(domains[z].clients[f].info.noip));
                                     num++;
                                     pos += sizeof(client->info.noip);
                                 }
-                                printf("after client loop pos=%u\n", pos);
 
                                 buffer2[24] = (unsigned char)num;
                                 buffer2[32] = (unsigned char)num;
@@ -430,8 +422,6 @@ int main(int argc, char **argv) {
                                 respond(client, buffer, buffer2, pos);
                             } else if (buffer[20] == 0x01 && buffer[22] == 0x01) {
                                 /* 01 00 01 00: poll chat */
-
-                                printf("poll_chat num=%u\n", client->num_chats);
 
                                 if (client->num_chats > 0) {
                                     size_t pos;
