@@ -196,6 +196,8 @@ static void enqueue_chat(struct domain *domain,
     struct chat *chat;
     unsigned z;
 
+    assert(size <= 2048);
+
     printf("entering enqueue_chat\n");
     for (z = 0, client = domain->clients; z < domain->num_clients;
          z++, client++) {
@@ -509,8 +511,9 @@ int main(int argc, char **argv) {
 
                                 handle_poll(client, sequence);
                             } else if (buffer[20] == 0x01) {
-                                /* 01 00 00 00: client sends chat message */
-                                if (buffer[52] == 0x01)
+                                /* 01 00 00 00: chat */
+
+                                if (buffer[52] == 0x01 && nbytes < 2048)
                                     enqueue_chat(&domains[z], buffer + 60,
                                                  (size_t)nbytes - 60);
 
