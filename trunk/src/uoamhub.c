@@ -35,9 +35,21 @@
 static int verbose = 9;
 static int should_exit = 0;
 
+struct noip_player_info {
+    char name[64];
+    unsigned char reserved[12];
+    unsigned char position[16];
+};
+
+struct player_info {
+    unsigned char ip[4];
+    struct noip_player_info noip;
+};
+
 struct client {
     int sockfd;
     int handshake:1;
+    struct player_info info;
 };
 
 struct domain {
@@ -48,7 +60,7 @@ struct domain {
 struct packet_header {
     /* WARNING: big endian */
     unsigned char five, zero1, type, three, ten;
-    char reserved[3];
+    unsigned char reserved[3];
     uint32_t length, counter;
 };
 
@@ -84,19 +96,7 @@ static unsigned char packet_poll[] = {
     0x84, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
     0x6c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
-    0x01, 0x00, 0x00, 0x00, 0x4d, 0x69, 0x6e, 0x6b,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x66, 0xd3, 0x00, 0x00, 0x00,
-    0x70, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00,
 };
 
 static unsigned char packet_response2[] = {
@@ -177,7 +177,7 @@ static void respond(struct client *client, unsigned char *request,
 
     printf("response: len=%lu\n", (unsigned long)response_length);
     for (i = 0; i < response_length; i++) {
-        printf("%02x ", response[i] & 0xff);
+        printf("%02x ", response[i]);
         if (i % 16 == 15)
             printf("\n");
     }
@@ -305,7 +305,7 @@ int main(int argc, char **argv) {
                         nbytes = recv(client->sockfd, buffer, sizeof(buffer), 0);
                         printf("packet: client=%u/%u len=%ld\n", z, w, (long)nbytes);
                         for (i = 0; i < nbytes; i++) {
-                            printf("%02x ", buffer[i] & 0xff);
+                            printf("%02x ", buffer[i]);
                             if (i % 16 == 15)
                                 printf("\n");
                         }
@@ -338,18 +338,52 @@ int main(int argc, char **argv) {
                             break;
 
                         case 0x00:
-                            if (buffer[22] == 0x02)
-                                respond(client, buffer,
-                                        packet_poll,
-                                        sizeof(packet_poll));
-                            else if (buffer[20] == 0x01)
+                            if (buffer[22] == 0x02) {
+                                /* client polls */
+                                size_t pos;
+                                unsigned f, num = 0;
+
+                                memcpy(buffer, packet_poll, sizeof(packet_poll));
+
+                                pos = sizeof(packet_poll);
+
+                                printf("making poll packet pos=%u: %u\n", pos, domains[z].num_clients);
+                                for (f = 0; f < domains[z].num_clients; f++) {
+                                    if (domains[z].clients[f].info.noip.name[0] == 0)
+                                        continue;
+                                    printf("adding client info %s\n", domains[z].clients[f].info.noip.name);
+                                    memcpy(buffer + pos, &domains[z].clients[f].info.noip,
+                                           sizeof(domains[z].clients[f].info.noip));
+                                    num++;
+                                    pos += sizeof(client->info.noip);
+                                }
+                                printf("after client loop pos=%u\n", pos);
+
+                                buffer[24] = (unsigned char)num;
+                                buffer[32] = (unsigned char)num;
+
+                                memset(buffer + pos, 0, 4);
+                                pos += 4;
+
+                                buffer[8] = pos & 0xff;
+                                buffer[9] = (pos >> 8) & 0xff;
+                                buffer[16] = (pos - 24) & 0xff;
+                                buffer[17] = ((pos - 24) >> 8) & 0xff;
+
+                                respond(client, buffer, buffer, pos);
+                            } else if (buffer[20] == 0x01) {
                                 respond(client, buffer,
                                         packet_ack2,
                                         sizeof(packet_ack2));
-                            else
+                            } else {
+                                /* client sends player position */
+
+                                memcpy(&client->info, buffer + 44, sizeof(client->info));
+
                                 respond(client, buffer,
                                         packet_ack,
                                         sizeof(packet_ack));
+                            }
                             break;
 
                         case 0x0e:
