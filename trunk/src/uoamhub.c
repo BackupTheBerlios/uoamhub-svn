@@ -310,6 +310,19 @@ static void kill_client(struct domain *domain, unsigned n) {
                 (domain->num_clients - n) * sizeof(*domain->clients));
 }
 
+static void kill_domain(struct host *host, unsigned n) {
+    struct domain *domain = &host->domains[n];
+
+    while (domain->num_clients > 0)
+        kill_client(domain, domain->num_clients - 1);
+
+    host->num_domains--;
+
+    if (n < host->num_domains)
+        memmove(host->domains + n, host->domains + n + 1,
+                (host->num_domains - n) * sizeof(*host->domains));
+}
+
 static void enqueue_client_chat(struct client *client,
                                 const void *data, size_t size) {
     struct chat *chat;
@@ -649,6 +662,7 @@ int main(int argc, char **argv) {
 
     /* create domain 0 */
     memset(&host, 0, sizeof(host));
+    host.num_domains = 1;
 
     /* server socket stuff */
     sockfd = socket(PF_INET, SOCK_STREAM, 0);
@@ -711,12 +725,7 @@ int main(int argc, char **argv) {
 
             if (i > 0 && host.domains[i].num_clients == 0) {
                 /* empty domain, delete it */
-                host.num_domains--;
-
-                if (i < (int)host.num_domains)
-                    memmove(host.domains + i, host.domains + i + 1,
-                            sizeof(host.domains[i]) * (host.num_domains - i));
-
+                kill_domain(&host, i);
                 i--;
             }
         }
@@ -762,9 +771,8 @@ int main(int argc, char **argv) {
     /* cleanup */
     close(sockfd);
 
-    for (z = 0; z < host.num_domains; z++)
-        while (host.domains[z].num_clients > 0)
-            kill_client(&host.domains[z], 0);
+    while (host.num_domains > 0)
+        kill_domain(&host, host.num_domains - 1);
 
     free_config(&config);
 
