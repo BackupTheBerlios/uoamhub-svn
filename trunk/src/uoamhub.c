@@ -1418,8 +1418,14 @@ static void handle_packet(struct client *client, unsigned socket_index,
 
     /* the rest must be 0x00 */
     if (data[2] != 0x00) {
-        log(1, "unknown code from client %s, killing\n",
-            client->name);
+        log(1, "unknown code %u from client %s, killing\n",
+            data[2], client->name);
+        client->should_destroy = 1;
+        return;
+    }
+
+    if (length < 24) {
+        /* too short */
         client->should_destroy = 1;
         return;
     }
