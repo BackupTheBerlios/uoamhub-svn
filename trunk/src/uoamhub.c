@@ -450,7 +450,7 @@ static void client_data_available(struct client *client) {
     unsigned char buffer[4096];
     ssize_t nbytes;
     struct packet_header *header = (struct packet_header*)buffer;
-    size_t length;
+    size_t position = 0, length;
 
     /* read from stream */
     nbytes = recv(client->sockfd, buffer, sizeof(buffer), 0);
@@ -494,9 +494,10 @@ static void client_data_available(struct client *client) {
         }
 
         /* handle packet */
-        handle_packet(client, buffer, length);
+        handle_packet(client, buffer + position, length);
 
         nbytes -= (ssize_t)length;
+        position += length;
     }
 }
 
