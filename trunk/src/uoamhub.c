@@ -56,7 +56,9 @@
 
 /** source for client ids (which are important for security). if you
     have a hardware random device, change this */
+#ifndef RANDOM_DEVICE
 #define RANDOM_DEVICE "/dev/urandom"
+#endif
 
 /*
   feel free to tune:
@@ -527,12 +529,16 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
     struct sigaction sa;
 
     /* random device */
+#ifdef HAVE_DEV_RANDOM
     *randomfdp = open(RANDOM_DEVICE, O_RDONLY);
     if (*randomfdp < 0) {
         fprintf(stderr, "failed to open %s: %s\n",
                 RANDOM_DEVICE, strerror(errno));
         exit(1);
     }
+#else
+    *randomfdp = -1;
+#endif
 
     /* server socket stuff */
     sockfd = socket(PF_INET, SOCK_STREAM, 0);
@@ -661,7 +667,9 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
             close(1);
             close(2);
             close(sockfd);
+#ifdef HAVE_DEV_RANDOM
             close(*randomfdp);
+#endif
 
             execl("/bin/sh", "sh", "-c", config->logger, NULL);
             exit(1);
@@ -845,7 +853,9 @@ static struct client *create_client(struct domain *domain, int sockfd,
                                     int randomfd) {
     struct client *client;
     int ret;
+#ifdef HAVE_DEV_RANDOM
     ssize_t nbytes;
+#endif
 
     client = calloc(1, sizeof(*client));
     if (client == NULL)
@@ -859,12 +869,19 @@ static struct client *create_client(struct domain *domain, int sockfd,
 
     /* a good random client id is vitally important for security,
        because secondary connections authorized themselves with it */
+#ifdef HAVE_DEV_RANDOM
     nbytes = read(randomfd, &client->id, sizeof(client->id));
     if (nbytes < (ssize_t)sizeof(client->id)) {
         fprintf(stderr, "random number generation failed\n");
         free(client);
         return NULL;
     }
+#else
+    (void)randomfd;
+
+    client->id = (random() << 24) + (random() << 16)
+        + (random() << 8) + random();
+#endif
 
     client->sockets[0] = sockfd;
     client->num_sockets = 1;
