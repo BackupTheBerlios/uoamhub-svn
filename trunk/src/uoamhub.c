@@ -522,7 +522,7 @@ static void free_config(struct config *config) {
 
 /** set up stuff, e.g. sockets, pipes, daemonize */
 static void setup(struct config *config, int *randomfdp, int *sockfdp) {
-    int ret, sockfd, yes = 1;
+    int ret, sockfd, param;
 #ifndef DISABLE_DAEMON_CODE
     int parentfd = -1, loggerfd = -1;
     pid_t logger_pid = -1;
@@ -550,7 +550,16 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
     }
 
     /* get rid of the "Address already in use" errors */
-    ret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+    param = 1;
+    ret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &param, sizeof(param));
+    if (ret < 0) {
+        fprintf(stderr, "setsockopt failed: %s\n",
+                strerror(errno));
+        exit(1);
+    }
+
+    param = 1;
+    ret = setsockopt(sockfd, SOL_SOCKET, SO_KEEPALIVE, &param, sizeof(param));
     if (ret < 0) {
         fprintf(stderr, "setsockopt failed: %s\n",
                 strerror(errno));

@@ -5,6 +5,7 @@ uoamhub (0.9.1) unstable; urgency=low
   * use random() if /dev/random does not exist
   * include netinet/in.h for FreeBSD compatibility
   * enable SO_REUSEADDR to get rid of the "Address already in use" errors
+  * enable SO_KEEPALIVE
 
  --
 
