@@ -1183,7 +1183,8 @@ static void handle_packet(struct client *client,
         } else if (data[20] == 0x01) {
             /* 01 00 00 00: chat */
 
-            if (length < 2048)
+            /* packets with 0x02 is evil for some reason */
+            if (length < 2048 && client->master_id == 0 && data[52] != 0x02)
                 enqueue_chat(client->domain, data + 52, length - 52);
 
             respond(client, sequence,
