@@ -1231,7 +1231,6 @@ int main(int argc, char **argv) {
     struct host host;
     struct domain *domain_zero, *domain;
     unsigned next_client_id = 1;
-    fd_set rfds;
 
     read_config(&config, argc, argv);
 
@@ -1250,6 +1249,7 @@ int main(int argc, char **argv) {
 
     /* main loop */
     do {
+        fd_set rfds;
         int max_fd;
 
         /* select() on all sockets */
@@ -1261,26 +1261,24 @@ int main(int argc, char **argv) {
         assert(domain == domain_zero);
 
         do {
-            struct client *client = domain->clients_head;
+            struct client *client, *next_client = domain->clients_head;
 
-            if (client != NULL) {
-                do {
-                    assert(client->domain == domain);
+            while (next_client != NULL) {
+                client = next_client;
+                next_client = client->next;
+                if (next_client == domain->clients_head)
+                    next_client = NULL;
 
-                    if (client->should_destroy) {
-                        struct client *k = client;
-                        client = client->next;
-                        kill_client(k);
-                        continue;
-                    }
+                assert(client->domain == domain);
 
-                    FD_SET(client->sockfd, &rfds);
-                    if (client->sockfd > max_fd)
-                        max_fd = client->sockfd;
+                if (client->should_destroy) {
+                    kill_client(client);
+                    continue;
+                }
 
-                    client = client->next;
-                } while (domain->clients_head != NULL &&
-                         client != domain->clients_head);
+                FD_SET(client->sockfd, &rfds);
+                if (client->sockfd > max_fd)
+                    max_fd = client->sockfd;
             }
 
             if (domain != domain_zero && domain->num_clients == 0) {
@@ -1325,23 +1323,20 @@ int main(int argc, char **argv) {
         assert(domain == domain_zero);
 
         do {
-            struct client *client = domain->clients_head, *next;
+            struct client *client, *next_client = domain->clients_head;
 
-            if (client != NULL) {
-                do {
-                    assert(client->domain == domain);
+            while (next_client != NULL) {
+                client = next_client;
+                next_client = client->next;
+                if (next_client == domain->clients_head)
+                    next_client = NULL;
 
-                    next = client->next;
-                    if (next == domain->clients_head)
-                        next = NULL;
+                assert(client->domain == domain);
 
-                    if (FD_ISSET(client->sockfd, &rfds)) {
-                        FD_CLR(client->sockfd, &rfds);
-                        client_data_available(client);
-                    }
-
-                    client = next;
-                } while (client != NULL);
+                if (FD_ISSET(client->sockfd, &rfds)) {
+                    FD_CLR(client->sockfd, &rfds);
+                    client_data_available(client);
+                }
             }
 
             domain = domain->next;
