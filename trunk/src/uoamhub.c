@@ -960,7 +960,7 @@ int main(int argc, char **argv) {
                 assert(client->domain == &host.domains[z]);
 
                 if (FD_ISSET(client->sockfd, &rfds)) {
-                    /*FD_CLR(client->sockfd, &rfds);*/
+                    FD_CLR(client->sockfd, &rfds);
                     client_data_available(client);
                 }
 
