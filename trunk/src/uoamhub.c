@@ -1439,6 +1439,8 @@ static void handle_packet(struct client *client, unsigned socket_index,
            after a reconnect, the clients sends shorter packets */
         if (length == 0x8c)
             process_position_update(client, data, length);
+
+        /* the response is sent later in this function */
     }
 
     /* handle login */
