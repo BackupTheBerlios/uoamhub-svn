@@ -1120,8 +1120,8 @@ static int login(struct client *client, const char *password) {
         return 0;
     }
 
-    enqueue_client_chat(client, block_uoamhub_font, sizeof(block_uoamhub_font));
-    enqueue_client_chat(client, block_uoamhub_motd, sizeof(block_uoamhub_motd));
+    enqueue_client_chat(client, block_uoamhub_motd,
+                        sizeof(block_uoamhub_motd));
 
     client->authorized = 1;
 
