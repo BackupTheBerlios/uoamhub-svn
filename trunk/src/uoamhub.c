@@ -692,14 +692,9 @@ int main(int argc, char **argv) {
     /* cleanup */
     close(sockfd);
 
-    for (z = 0; z < num_domains; z++) {
-        struct client *client = domains[z].clients;
-        unsigned w;
-
-        for (w = 0; w < domains[z].num_clients; w++, client++) {
-            close(client->sockfd);
-        }
-    }
+    for (z = 0; z < num_domains; z++)
+        while (domains[z].num_clients > 0)
+            kill_client(&domains[z], 0);
 
     free_config(&config);
 }
