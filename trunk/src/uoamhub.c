@@ -201,6 +201,8 @@ static void usage(void) {
             " -v             increase verbosity (default 1)\n"
             " --quiet\n"
             " -q             reset verbosity to 0\n"
+            " -p port\n"
+            " --port port    listen on this port (default 2000)\n"
             );
     exit(1);
 }
@@ -213,15 +215,17 @@ static void read_config(struct config *config, int argc, char **argv) {
         {"verbose", 0, 0, 'v'},
         {"quiet", 0, 0, 'q'},
         {"help", 0, 0, 'h'},
+        {"port", 1, 0, 'p'},
         {0,0,0,0}
     };
+    unsigned port = 2000;
 
     memset(config, 0, sizeof(*config));
 
     while (1) {
         int option_index = 0;
 
-        ret = getopt_long(argc, argv, "Vvqh",
+        ret = getopt_long(argc, argv, "Vvqhp:",
                           long_options, &option_index);
         if (ret == -1)
             break;
@@ -238,6 +242,13 @@ static void read_config(struct config *config, int argc, char **argv) {
             break;
         case 'h':
             usage();
+        case 'p':
+            port = (unsigned)strtoul(optarg, NULL, 10);
+            if (port == 0) {
+                fprintf(stderr, "invalid port specification\n");
+                exit(1);
+            }
+            break;
         default:
             exit(1);
         }
@@ -252,7 +263,7 @@ static void read_config(struct config *config, int argc, char **argv) {
     hints.ai_family = PF_INET;
     hints.ai_socktype = SOCK_STREAM;
 
-    ret = getaddrinfo_helper("*", 2000, &hints, &config->bind_address);
+    ret = getaddrinfo_helper("*", port, &hints, &config->bind_address);
     if (ret < 0) {
         fprintf(stderr, "getaddrinfo_helper failed: %s\n",
                 strerror(errno));
