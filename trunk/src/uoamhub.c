@@ -323,10 +323,12 @@ static int read_file_string(const char *filename, char **value) {
     assert(value != NULL);
     assert(*value == NULL);
 
+    /* open file */
     file = fopen(filename, "r");
     if (file == NULL)
         return -1;
 
+    /* read the first line */
     p = fgets(line, sizeof(line), file);
     save_errno = errno;
     fclose(file);
@@ -335,6 +337,7 @@ static int read_file_string(const char *filename, char **value) {
         return -1;
     }
 
+    /* trim value */
     while (*p > 0 && *p <= 0x20)
         p++;
 
@@ -345,6 +348,7 @@ static int read_file_string(const char *filename, char **value) {
 
     p[len] = 0;
 
+    /* allocate memory */
     *value = strdup(p);
     if (*value == NULL)
         return -1;
@@ -416,6 +420,12 @@ static void read_config(struct config *config, int argc, char **argv) {
             if (ret < 0) {
                 fprintf(stderr, "failed to read '%s': %s\n",
                         optarg, strerror(errno));
+                exit(1);
+            }
+
+            if (config->password[0] == 0) {
+                fprintf(stderr, "password in '%s' is empty\n",
+                        optarg);
                 exit(1);
             }
 
@@ -1326,12 +1336,14 @@ static void handle_poll(struct client *client, unsigned socket_index,
     }
 }
 
+/** respond to a packet from the client */
 static void handle_packet(struct client *client, unsigned socket_index,
                           const unsigned char *data, size_t length) {
     unsigned sequence;
 
     sequence = read_uint32(data + 12);
 
+    /* the first packet a client sends in a TCP connection */
     if (data[2] == 0x0b) {
         if (!client->handshake) {
             uint32_t master_id;
@@ -1346,6 +1358,8 @@ static void handle_packet(struct client *client, unsigned socket_index,
 
             master_id = read_uint32(data + 20);
             if (master_id != 0) {
+                /* this is a secondary connection; find the primary
+                   one and merge both clients */
                 struct client *master;
                 int ret;
 
@@ -1372,6 +1386,7 @@ static void handle_packet(struct client *client, unsigned socket_index,
 
         client->handshake = 1;
 
+        /* send the response */
         snprintf((char*)packet_handshake_response + 26, 6, "%u", client->domain->host->config->port);
 
         respond(client, socket_index, sequence,
@@ -1456,6 +1471,7 @@ static void handle_packet(struct client *client, unsigned socket_index,
     }
 }
 
+/** see if more data is available, don't block */
 static ssize_t select_more_data(int sockfd, unsigned char *buffer,
                                 size_t max_len) {
     fd_set rfds;
