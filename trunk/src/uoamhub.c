@@ -488,19 +488,19 @@ int main(int argc, char **argv) {
 
     /* main loop */
     do {
-        int max_fd;
+        int max_fd, i;
 
         /* select() on all sockets */
         FD_ZERO(&rfds);
         FD_SET(sockfd, &rfds);
         max_fd = sockfd;
-        for (z = 0; z < num_domains; z++) {
-            struct client *client = domains[z].clients;
+        for (i = 0; i < (int)num_domains; i++) {
+            struct client *client = domains[i].clients;
             int w;
 
-            for (w = 0; w < (int)domains[z].num_clients; w++, client++) {
+            for (w = 0; w < (int)domains[i].num_clients; w++, client++) {
                 if (client->should_destroy) {
-                    kill_client(&domains[z], w--);
+                    kill_client(&domains[i], w--);
                     client--;
                     continue;
                 }
@@ -508,6 +508,17 @@ int main(int argc, char **argv) {
                 FD_SET(client->sockfd, &rfds);
                 if (client->sockfd > max_fd)
                     max_fd = client->sockfd;
+            }
+
+            if (i > 0 && domains[i].num_clients == 0) {
+                /* empty domain, delete it */
+                num_domains--;
+
+                if (i < (int)num_domains)
+                    memmove(domains + i, domains + i + 1,
+                            sizeof(domains[i]) * (num_domains - i));
+
+                i--;
             }
         }
 
