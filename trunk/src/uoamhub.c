@@ -837,6 +837,9 @@ static void kill_domain(struct domain *domain) {
     assert(domain != NULL);
     assert(domain->host != NULL);
 
+    if (verbose >= 2)
+        printf("killing domain '%s'\n", domain->password);
+
     host = domain->host;
 
     while (domain->num_clients > 0)
@@ -856,6 +859,8 @@ static void kill_domain(struct domain *domain) {
         domain->next->prev = domain->prev;
         domain->prev->next = domain->next;
     }
+
+    free(domain);
 }
 
 static int move_client(struct client *client, struct domain *domain) {
