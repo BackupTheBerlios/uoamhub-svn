@@ -289,6 +289,33 @@ static void respond(struct client *client, unsigned sequence,
     send(client->sockfd, response, response_length, 0);
 }
 
+static void handle_query_list(struct client *client, unsigned sequence,
+                              struct domain *domain) {
+    unsigned char buffer[4096];
+    size_t pos;
+    unsigned f, num = 0;
+
+    memcpy(buffer, packet_poll, sizeof(packet_poll));
+    pos = sizeof(packet_poll);
+
+    for (f = 0; f < domain->num_clients; f++) {
+        if (domain->clients[f].info.noip.name[0] == 0)
+            continue;
+        memcpy(buffer + pos, &domain->clients[f].info.noip,
+               sizeof(domain->clients[f].info.noip));
+        num++;
+        pos += sizeof(client->info.noip);
+    }
+
+    write_uint32(buffer + 24, (uint32_t)num);
+    write_uint32(buffer + 32, (uint32_t)num);
+
+    memset(buffer + pos, 0, 4);
+    pos += 4;
+
+    respond(client, sequence, buffer, pos);
+}
+
 static void handle_poll(struct client *client, unsigned sequence) {
     if (client->num_chats > 0) {
         /* send the first chat entry */
@@ -432,7 +459,7 @@ int main(int argc, char **argv) {
 
                 for (w = 0; w < domains[z].num_clients; w++, client++) {
                     if (FD_ISSET(client->sockfd, &rfds)) {
-                        unsigned char buffer[4096], buffer2[4096];
+                        unsigned char buffer[4096];
                         ssize_t nbytes;
                         struct packet_header *header = (struct packet_header*)buffer;
                         unsigned sequence;
@@ -475,28 +502,8 @@ int main(int argc, char **argv) {
                         case 0x00:
                             if (buffer[22] == 0x02) {
                                 /* 00 00 02 00: client polls */
-                                size_t pos;
-                                unsigned f, num = 0;
 
-                                memcpy(buffer2, packet_poll, sizeof(packet_poll));
-                                pos = sizeof(packet_poll);
-
-                                for (f = 0; f < domains[z].num_clients; f++) {
-                                    if (domains[z].clients[f].info.noip.name[0] == 0)
-                                        continue;
-                                    memcpy(buffer2 + pos, &domains[z].clients[f].info.noip,
-                                           sizeof(domains[z].clients[f].info.noip));
-                                    num++;
-                                    pos += sizeof(client->info.noip);
-                                }
-
-                                buffer2[24] = (unsigned char)num;
-                                buffer2[32] = (unsigned char)num;
-
-                                memset(buffer2 + pos, 0, 4);
-                                pos += 4;
-
-                                respond(client, sequence, buffer2, pos);
+                                handle_query_list(client, sequence, &domains[z]);
                             } else if (buffer[20] == 0x01 && buffer[22] == 0x01) {
                                 /* 01 00 01 00: poll chat */
 
