@@ -56,7 +56,7 @@ struct chat {
 struct client {
     unsigned id;
     int sockfd;
-    int handshake:1;
+    int handshake:1, have_position:1;
     struct player_info info;
     struct chat *chats[MAX_CHATS];
     unsigned num_chats;
@@ -293,6 +293,26 @@ static void respond(struct client *client, unsigned sequence,
     send(client->sockfd, response, response_length, 0);
 }
 
+static void process_position_update(struct client *client,
+                                    const unsigned char *data, size_t length) {
+    const struct player_info *info = (const struct player_info*)(data + 44);
+
+    if (length != 0x8c) {
+        fprintf(stderr, "client %u: wrong length %lu in position_update packet\n",
+                client->id, (unsigned long)length);
+        return;
+    }
+
+    if (memchr(info->noip.name, 0, sizeof(info->noip.name)) == NULL) {
+        fprintf(stderr, "client %u: no NUL character in name\n",
+                client->id);
+        return;
+    }
+
+    memcpy(&client->info, info, sizeof(client->info));
+    client->have_position = 1;
+}
+
 static void handle_query_list(struct client *client, unsigned sequence,
                               struct domain *domain) {
     unsigned char buffer[4096];
@@ -525,8 +545,7 @@ int main(int argc, char **argv) {
                             } else {
                                 /* 00 00 10 00 or 00 00 00 00: client sends player position */
 
-                                memcpy(&client->info, buffer + 44, sizeof(client->info));
-
+                                process_position_update(client, buffer, (size_t)nbytes);
                                 respond(client, sequence,
                                         packet_ack,
                                         sizeof(packet_ack));
