@@ -287,7 +287,7 @@ int main(int argc, char **argv) {
     hints.ai_family = PF_INET;
     hints.ai_socktype = SOCK_STREAM;
 
-    ret = getaddrinfo_helper("172.30.3.1", 2000, &hints, &bind_address);
+    ret = getaddrinfo_helper("*", 2000, &hints, &bind_address);
     if (ret < 0) {
         fprintf(stderr, "getaddrinfo_helper failed: %s\n",
                 strerror(errno));
