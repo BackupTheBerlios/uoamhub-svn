@@ -434,8 +434,6 @@ static void enqueue_client_chat(struct client *client,
     if (chat == NULL)
         return;
 
-    printf("  chat_add to %s num=%u\n", client->info.noip.name, client->num_chats);
-
     chat->size = size;
     memcpy(chat->data, data, size);
 
