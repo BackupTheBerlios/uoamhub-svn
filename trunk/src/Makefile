@@ -1,5 +1,5 @@
 # uoamhub Makefile
-# (c) 2004 Max Kellermann <max@duempel.org>
+# (c) 2004-2005 Max Kellermann <max@duempel.org>
 # $Id$
 
 # auto-detect a C compiler
