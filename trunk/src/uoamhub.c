@@ -180,13 +180,6 @@ struct host {
     unsigned num_domains;
 };
 
-struct packet_header {
-    /* WARNING: big endian */
-    unsigned char five, zero1, type, three, ten;
-    unsigned char reserved[3];
-    uint32_t length, counter;
-};
-
 /*
   Some templates for packets are following. I havn't decoded some of
   them yet, but that doesn't matter as long as the client understands
@@ -1486,7 +1479,6 @@ static ssize_t select_more_data(int sockfd, unsigned char *buffer,
 static void client_data_available(struct client *client, unsigned socket_index) {
     unsigned char buffer[4096];
     ssize_t nbytes;
-    struct packet_header *header = (struct packet_header*)buffer;
     size_t position = 0, length;
 
     assert(socket_index < client->num_sockets);
@@ -1518,8 +1510,8 @@ static void client_data_available(struct client *client, unsigned socket_index) 
         }
 
         /* check header */
-        if (header->five != 0x05 || header->zero1 != 0x00 ||
-            header->three != 0x03 || header->ten != 0x10) {
+        if (buffer[0] != 0x05 || buffer[1] != 0x00 ||
+            buffer[3] != 0x03 || buffer[4] != 0x10) {
             log(1, "malformed packet, killing client %s\n",
                 client->name);
             client->should_destroy = 1;
