@@ -243,12 +243,8 @@ static void dump_packet(FILE *file, unsigned char *data, size_t length) {
         }
 
         fprintf(file, " ");
-        for (x = 0; x < 0x10; x++) {
-            char ch = y + x < length
-                ? (data[x] >= 0x20 ? data[x] : '.')
-                : ' ';
-            fputc(ch, file);
-        }
+        for (x = 0; x < columns; x++)
+            fputc(data[x] >= 0x20 ? data[x] : '.', file);
 
         fprintf(file, "\n");
     }
@@ -263,6 +259,7 @@ static void respond(struct client *client, unsigned char *request,
     send(client->sockfd, response, response_length, 0);
 
     if (verbose >= 4) {
+        printf("sending to client %u\n", client->id);
         dump_packet(stdout, response, response_length);
         printf("\n");
     }
@@ -383,6 +380,7 @@ int main(int argc, char **argv) {
 
                         nbytes = recv(client->sockfd, buffer, sizeof(buffer), 0);
                         if (verbose >= 4) {
+                            printf("received from client %u\n", client->id);
                             dump_packet(stdout, buffer, (size_t)nbytes);
                             printf("\n");
                         }
