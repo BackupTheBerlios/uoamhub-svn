@@ -1512,7 +1512,9 @@ static ssize_t select_more_data(int sockfd, unsigned char *buffer,
     return recv(sockfd, buffer, max_len, 0);
 }
 
-static void client_data_available(struct client *client, unsigned socket_index) {
+/** select() told us that data is available on this socket */
+static void client_data_available(struct client *client,
+                                  unsigned socket_index) {
     unsigned char buffer[4096];
     ssize_t nbytes;
     size_t position = 0, length;
@@ -1536,6 +1538,8 @@ static void client_data_available(struct client *client, unsigned socket_index) 
     }
 #endif
 
+    /* the recv() may have read more than one packet - handle all of
+       them serially */
     while (nbytes > 0 && !client->should_destroy) {
         if (nbytes < 16) {
             /* we need 16 bytes for a header */
@@ -1588,12 +1592,14 @@ static void client_data_available(struct client *client, unsigned socket_index) 
     }
 }
 
+/** welcome to main() */
 int main(int argc, char **argv) {
     struct config config;
     int ret, randomfd, sockfd;
     struct host host;
     struct domain *domain_zero, *domain;
 
+    /* parse command line arguments */
     read_config(&config, argc, argv);
 
     /* setup uid, sockets, chroot, logger etc. */
