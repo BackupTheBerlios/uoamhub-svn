@@ -446,6 +446,48 @@ static void handle_packet(struct client *client,
     }
 }
 
+static void client_data_available(struct client *client) {
+    unsigned char buffer[4096];
+    ssize_t nbytes;
+    struct packet_header *header = (struct packet_header*)buffer;
+    unsigned sequence;
+
+    /* read from stream */
+    nbytes = recv(client->sockfd, buffer, sizeof(buffer), 0);
+    if (verbose >= 4) {
+        printf("received from client %u\n", client->id);
+        dump_packet(stdout, buffer, (size_t)nbytes);
+        printf("\n");
+    }
+
+    if (nbytes <= 0) {
+        printf("client %u disconnected\n", client->id);
+        client->should_destroy = 1;
+        return;
+    }
+
+    if (nbytes < 16) {
+        printf("packet from client %u is too small (%lu bytes)\n",
+               client->id, (unsigned long)nbytes);
+        client->should_destroy = 1;
+        return;
+    }
+
+    /* check header */
+    if (header->five != 0x05 || header->zero1 != 0x00 ||
+        header->three != 0x03 || header->ten != 0x10) {
+        printf("malformed packet, killing client\n");
+        client->should_destroy = 1;
+        return;
+    }
+
+    /* extract data */
+    sequence = read_uint32(buffer + 12);
+
+    /* handle packet */
+    handle_packet(client, buffer, (size_t)nbytes);
+}
+
 int main(int argc, char **argv) {
     struct addrinfo hints, *bind_address;
     int ret, sockfd;
@@ -572,44 +614,8 @@ int main(int argc, char **argv) {
             unsigned w;
 
             for (w = 0; w < domains[z].num_clients; w++, client++) {
-                if (FD_ISSET(client->sockfd, &rfds)) {
-                    unsigned char buffer[4096];
-                    ssize_t nbytes;
-                    struct packet_header *header = (struct packet_header*)buffer;
-                    unsigned sequence;
-
-                    /* read from stream */
-                    nbytes = recv(client->sockfd, buffer, sizeof(buffer), 0);
-                    if (verbose >= 4) {
-                        printf("received from client %u\n", client->id);
-                        dump_packet(stdout, buffer, (size_t)nbytes);
-                        printf("\n");
-                    }
-
-                    if (nbytes == 0) {
-                        printf("client %u disconnected\n", client->id);
-                        client->should_destroy = 1;
-                        continue;
-                    }
-
-                    if (nbytes < 16)
-                        continue;
-
-                    /* check header */
-                    if (header->five != 0x05 || header->zero1 != 0x00 ||
-                        header->three != 0x03 || header->ten != 0x10) {
-                        printf("malformed packet, killing client\n");
-                        kill_client(&domains[z], w--);
-                        client--;
-                        continue;
-                    }
-
-                    /* extract data */
-                    sequence = read_uint32(buffer + 12);
-
-                    /* handle packet */
-                    handle_packet(client, buffer, (size_t)nbytes);
-                }
+                if (FD_ISSET(client->sockfd, &rfds))
+                    client_data_available(client);
             }
         }
     } while (!should_exit);
