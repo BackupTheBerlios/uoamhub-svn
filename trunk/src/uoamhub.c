@@ -993,11 +993,9 @@ static void process_position_update(struct client *client,
                                     const unsigned char *data, size_t length) {
     const struct player_info *info = (const struct player_info*)(data + 44);
 
-    if (length != 0x8c) {
-        fprintf(stderr, "client %u: wrong length %lu in position_update packet\n",
-                client->id, (unsigned long)length);
-        return;
-    }
+    assert(length == 0x8c);
+
+    (void)length;
 
     if (memchr(info->noip.name, 0, sizeof(info->noip.name)) == NULL) {
         fprintf(stderr, "client %u: no NUL character in name\n",
@@ -1235,7 +1233,9 @@ static void handle_packet(struct client *client, unsigned socket_index,
         } else {
             /* 00 00 10 00 or 00 00 00 00: client sends player position */
 
-            process_position_update(client, data, length);
+            if (length == 0x8c)
+                process_position_update(client, data, length);
+
             respond(client, socket_index, sequence,
                     packet_ack,
                     sizeof(packet_ack));
