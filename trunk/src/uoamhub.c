@@ -499,14 +499,15 @@ int main(int argc, char **argv) {
             int w;
 
             for (w = 0; w < (int)domains[z].num_clients; w++, client++) {
-                if (client->should_destroy < 0) {
+                if (client->should_destroy) {
                     kill_client(&domains[z], w--);
                     client--;
-                } else {
-                    FD_SET(client->sockfd, &rfds);
-                    if (client->sockfd > max_fd)
-                        max_fd = client->sockfd;
+                    continue;
                 }
+
+                FD_SET(client->sockfd, &rfds);
+                if (client->sockfd > max_fd)
+                    max_fd = client->sockfd;
             }
         }
 
