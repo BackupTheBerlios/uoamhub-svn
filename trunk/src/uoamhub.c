@@ -203,6 +203,7 @@ static unsigned char block_uoamhub_motd[] = {
     0x00,
 };
 
+/** signal handler for SIGTERM, SIGINT etc. */
 static void exit_signal_handler(int sig) {
     (void)sig;
 
@@ -245,6 +246,7 @@ static int getaddrinfo_helper(const char *host_and_port, int default_port,
     return getaddrinfo(host, port, hints, aip);
 }
 
+/** print a short usage description */
 static void usage(void) __attribute__ ((noreturn));
 static void usage(void) {
     fprintf(stderr, "usage: uoamhub [options]\n\n"
@@ -270,6 +272,7 @@ static void usage(void) {
     exit(1);
 }
 
+/** read the contents of a file into a new string on the heap */
 static int read_file_string(const char *filename, char **value) {
     FILE *file;
     char line[1024], *p;
@@ -308,6 +311,7 @@ static int read_file_string(const char *filename, char **value) {
     return 0;
 }
 
+/** read configuration options from the command line */
 static void read_config(struct config *config, int argc, char **argv) {
     int ret;
     struct addrinfo hints;
@@ -435,6 +439,7 @@ static void read_config(struct config *config, int argc, char **argv) {
     }
 }
 
+/** free data in a config struct; the struct itself is not freed */
 static void free_config(struct config *config) {
     if (config->bind_address != NULL)
         freeaddrinfo(config->bind_address);
@@ -445,6 +450,7 @@ static void free_config(struct config *config) {
     memset(config, 0, sizeof(*config));
 }
 
+/** set up stuff, e.g. sockets, pipes, daemonize */
 static void setup(struct config *config, int *randomfdp, int *sockfdp) {
     int ret, sockfd, parentfd = -1, loggerfd = -1;
     pid_t logger_pid = -1;
@@ -668,6 +674,8 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
     }
 }
 
+/** free memory used by a client, including sockets and the client
+    struct itself */
 static void free_client(struct client *client) {
     unsigned z;
 
@@ -686,6 +694,7 @@ static void free_client(struct client *client) {
     free(client);
 }
 
+/** add an unbound client to a domain; fails if the domain is full */
 static int add_client(struct domain *domain, struct client *client) {
     assert(client->domain == NULL);
 
@@ -713,6 +722,7 @@ static int add_client(struct domain *domain, struct client *client) {
     return 1;
 }
 
+/** remove a bound client from its damain */
 static void remove_client(struct client *client) {
     assert(client->domain != NULL);
     assert(client->domain->num_clients > 0);
@@ -734,6 +744,8 @@ static void remove_client(struct client *client) {
     client->domain = NULL;
 }
 
+/** generate a new client->name from the client IP address and nick
+    name */
 static void update_client_name(struct client *client) {
     struct sockaddr_in *addr_in = (struct sockaddr_in*)&client->address;
     char ip[16];
@@ -753,6 +765,7 @@ static void update_client_name(struct client *client) {
     }
 }
 
+/** create a new client and adds it to the domain */
 static struct client *create_client(struct domain *domain, int sockfd,
                                     struct sockaddr *addr, socklen_t addrlen,
                                     int randomfd) {
@@ -795,6 +808,7 @@ static struct client *create_client(struct domain *domain, int sockfd,
     return client;
 }
 
+/** merge two clients */
 static int append_client(struct client *dest, struct client *src,
                          unsigned *socket_index) {
     assert(dest->num_sockets > 0);
@@ -815,6 +829,7 @@ static int append_client(struct client *dest, struct client *src,
     return 0;
 }
 
+/** kill a client */
 static void kill_client(struct client *client) {
     if (verbose > 0)
         printf("kill_client %s\n", client->name);
@@ -853,6 +868,7 @@ static struct client *get_client(struct host *host, uint32_t id) {
     return NULL;
 }
 
+/** find a domain by its password */
 static struct domain *get_domain(struct host *host, const char *password) {
     struct domain *domain = host->domains_head;
 
@@ -869,6 +885,7 @@ static struct domain *get_domain(struct host *host, const char *password) {
     return NULL;
 }
 
+/** create a domain and add it to the host */
 static struct domain *create_domain(struct host *host, const char *password) {
     size_t password_len;
     struct domain *domain;
@@ -915,6 +932,7 @@ static struct domain *create_domain(struct host *host, const char *password) {
     return domain;
 }
 
+/** kill a domain and remove it from the host */
 static void kill_domain(struct domain *domain) {
     struct host *host;
 
@@ -947,6 +965,7 @@ static void kill_domain(struct domain *domain) {
     free(domain);
 }
 
+/** move a bound client to another domain */
 static int move_client(struct client *client, struct domain *domain) {
     int ret;
     struct domain *old_domain = client->domain;
@@ -970,6 +989,7 @@ static int move_client(struct client *client, struct domain *domain) {
     return 1;
 }
 
+/** enqueue a chat packet in a client structure */
 static void enqueue_client_chat(struct client *client,
                                 const void *data, size_t size) {
     struct chat *chat;
@@ -987,6 +1007,7 @@ static void enqueue_client_chat(struct client *client,
     client->chats[client->num_chats++] = chat;
 }
 
+/** broadcast a chat packet to all clients in a domain */
 static void enqueue_chat(struct domain *domain,
                          const void *data, size_t size) {
     struct client *client = domain->clients_head;
@@ -1003,6 +1024,7 @@ static void enqueue_chat(struct domain *domain,
     } while (client != domain->clients_head);
 }
 
+/** dump a packet as text */
 static void dump_packet(FILE *file, const unsigned char *data, size_t length) {
     size_t y;
 
@@ -1034,6 +1056,7 @@ static void dump_packet(FILE *file, const unsigned char *data, size_t length) {
     }
 }
 
+/** read a 32 bit unsigned integer (intel byte order) */
 static uint32_t read_uint32(const unsigned char *buffer) {
     return buffer[0] |
         buffer[1] << 8 |
@@ -1041,6 +1064,7 @@ static uint32_t read_uint32(const unsigned char *buffer) {
         buffer[3] << 24;
 }
 
+/** write a 32 bit unsigned integer (intel byte order) */
 static void write_uint32(unsigned char *buffer, uint32_t value) {
     buffer[0] = value & 0xff;
     buffer[1] = (value >> 8) & 0xff;
@@ -1048,6 +1072,7 @@ static void write_uint32(unsigned char *buffer, uint32_t value) {
     buffer[3] = (value >> 24) & 0xff;
 }
 
+/** send a response packet, tweaking some fields */
 static void respond(struct client *client, unsigned socket_index,
                     unsigned sequence,
                     unsigned char *response, size_t response_length) {
