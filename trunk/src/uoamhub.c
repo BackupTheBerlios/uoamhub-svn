@@ -129,7 +129,6 @@ static unsigned char packet_chat[] = {
     0x05, 0x00, 0x02, 0x03, 0x10, 0x00, 0x00, 0x00,
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x00, 0x00,
-    0x01, 0x00, 0x00, 0x00, 0xa8, 0x5f, 0x6a, 0x00,
 };
 
 static unsigned char packet_poll[] = {
@@ -719,8 +718,8 @@ static void handle_packet(struct client *client,
         } else if (data[20] == 0x01) {
             /* 01 00 00 00: chat */
 
-            if (data[52] == 0x01 && length < 2048)
-                enqueue_chat(client->domain, data + 60, length - 60);
+            if (length < 2048)
+                enqueue_chat(client->domain, data + 52, length - 52);
 
             respond(client, sequence,
                     packet_ack,
