@@ -428,13 +428,14 @@ static void process_position_update(struct client *client,
 static void handle_query_list(struct client *client, unsigned sequence) {
     struct domain *domain = client->domain;
     unsigned char buffer[4096];
+    const size_t max_pos = sizeof(buffer) - sizeof(client->info.noip) - 4;
     size_t pos;
     unsigned f, num = 0;
 
     memcpy(buffer, packet_poll, sizeof(packet_poll));
     pos = sizeof(packet_poll);
 
-    for (f = 0; f < domain->num_clients; f++) {
+    for (f = 0; f < domain->num_clients && pos <= max_pos; f++) {
         if (domain->clients[f].info.noip.name[0] == 0)
             continue;
         memcpy(buffer + pos, &domain->clients[f].info.noip,
@@ -713,7 +714,10 @@ int main(int argc, char **argv) {
         }
 
         ret = select(max_fd + 1, &rfds, NULL, NULL, NULL);
-        if (ret < 0 && errno != EINTR) {
+        if (ret < 0) {
+            if (errno == EINTR)
+                continue;
+
             fprintf(stderr, "select failed: %s\n", strerror(errno));
             break;
         }
