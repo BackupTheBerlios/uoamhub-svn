@@ -166,6 +166,26 @@ static int getaddrinfo_helper(const char *host_and_port, int default_port,
     return getaddrinfo(host, port, hints, aip);
 }
 
+static void create_client(struct domain *domain, int sockfd, unsigned id) {
+    struct client *client = &domain->clients[domain->num_clients];
+
+    if (domain->num_clients >= MAX_CLIENTS) {
+        fprintf(stderr, "domain 0 is full, rejecting new client %u\n", id);
+        close(sockfd);
+        return;
+    }
+
+    domain->num_clients++;
+
+    memset(client, 0, sizeof(*client));
+    client->id = id;
+    client->sockfd = sockfd;
+    client->domain = domain;
+
+    if (verbose >= 1)
+        printf("new client: %u\n", client->id);
+}
+
 static void kill_client(struct domain *domain, unsigned n) {
     unsigned z;
     struct client *client = &domain->clients[n];
@@ -540,19 +560,7 @@ int main(int argc, char **argv) {
                     exit(1);
                 }
 
-                if (domains[0].num_clients < MAX_CLIENTS) {
-                    struct client *client = &domains[0].clients[domains[0].num_clients++];
-
-                    memset(client, 0, sizeof(*client));
-                    client->id = next_client_id++;
-                    client->sockfd = ret;
-                    client->domain = &domains[0];
-
-                    printf("new client: %u\n", client->id);
-                } else {
-                    /* sorry, domain 0 is full */
-                    close(sockfd);
-                }
+                create_client(&domains[0], ret, next_client_id++);
             }
 
             for (z = 0; z < num_domains; z++) {
