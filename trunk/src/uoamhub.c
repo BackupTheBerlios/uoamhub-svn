@@ -45,6 +45,7 @@
 
 #define MAX_DOMAINS 64
 #define MAX_CLIENTS 256
+#define MAX_SOCKETS 16
 #define MAX_CHATS 8
 
 static const char VERSION[] = "0.1.0";
@@ -79,8 +80,9 @@ struct chat {
 
 struct client {
     struct client *prev, *next;
-    unsigned id, master_id;
-    int sockfd;
+    unsigned id;
+    int sockets[16];
+    unsigned num_sockets;
     struct domain *domain;
     int should_destroy:1, handshake:1, authorized:1, have_position:1,
         chat_enabled:1;
@@ -626,8 +628,8 @@ static void free_client(struct client *client) {
     assert(client->prev == NULL);
     assert(client->next == NULL);
 
-    if (client->sockfd >= 0)
-        close(client->sockfd);
+    for (z = 0; z < client->num_sockets; z++)
+        close(client->sockets[z]);
 
     for (z = 0; z < client->num_chats; z++) {
         free(client->chats[z]);
@@ -693,7 +695,8 @@ static struct client *create_client(struct domain *domain, int sockfd, unsigned 
         return NULL;
 
     client->id = id;
-    client->sockfd = sockfd;
+    client->sockets[0] = sockfd;
+    client->num_sockets = 1;
 
     ret = add_client(domain, client);
     if (!ret) {
@@ -706,6 +709,26 @@ static struct client *create_client(struct domain *domain, int sockfd, unsigned 
         printf("new client: %u\n", client->id);
 
     return client;
+}
+
+static int append_client(struct client *dest, struct client *src,
+                         unsigned *socket_index) {
+    assert(dest->num_sockets > 0);
+    assert(src->num_sockets > 0);
+    assert(*socket_index < src->num_sockets);
+
+    if (src->num_sockets + dest->num_sockets > MAX_SOCKETS)
+        return -1;
+
+    if (socket_index != NULL)
+        *socket_index += dest->num_sockets;
+
+    memcpy(dest->sockets + dest->num_sockets, src->sockets,
+           src->num_sockets * sizeof(dest->sockets[0]));
+    dest->num_sockets += src->num_sockets;
+    src->num_sockets = 0;
+
+    return 0;
 }
 
 static void kill_client(struct client *client) {
@@ -885,8 +908,7 @@ static void enqueue_chat(struct domain *domain,
         return;
 
     do {
-        if (client->master_id == 0)
-            enqueue_client_chat(client, data, size);
+        enqueue_client_chat(client, data, size);
 
         client = client->next;
     } while (client != domain->clients_head);
@@ -937,10 +959,12 @@ static void write_uint32(unsigned char *buffer, uint32_t value) {
     buffer[3] = (value >> 24) & 0xff;
 }
 
-static void respond(struct client *client, unsigned sequence,
+static void respond(struct client *client, unsigned socket_index,
+                    unsigned sequence,
                     unsigned char *response, size_t response_length) {
     assert(response_length >= 16);
     assert(response[2] != 0x02 || response_length >= 24);
+    assert(socket_index < client->num_sockets);
 
     /* copy packet sequence number */
     write_uint32(response + 12, (uint32_t)sequence);
@@ -951,11 +975,8 @@ static void respond(struct client *client, unsigned sequence,
     if (response[2] == 0x02)
         write_uint32(response + 16, (uint32_t)(response_length - 24));
 
-    if (response[2] == 0x0c || response[2] == 0x0f) {
-        unsigned master_id = client->master_id == 0
-            ? client->id : client->master_id;
-        write_uint32(response + 20, (uint32_t)master_id);
-    }
+    if (response[2] == 0x0c || response[2] == 0x0f)
+        write_uint32(response + 20, (uint32_t)client->id);
 
     /* dump it */
     if (verbose >= 6) {
@@ -965,7 +986,7 @@ static void respond(struct client *client, unsigned sequence,
     }
 
     /* send it */
-    send(client->sockfd, response, response_length, 0);
+    send(client->sockets[socket_index], response, response_length, 0);
 }
 
 static void process_position_update(struct client *client,
@@ -988,7 +1009,8 @@ static void process_position_update(struct client *client,
     client->have_position = 1;
 }
 
-static void handle_query_list(struct client *client, unsigned sequence) {
+static void handle_query_list(struct client *client, unsigned socket_index,
+                              unsigned sequence) {
     struct domain *domain = client->domain;
     unsigned char buffer[4096];
     size_t pos;
@@ -1002,8 +1024,7 @@ static void handle_query_list(struct client *client, unsigned sequence) {
         const size_t max_pos = sizeof(buffer) - sizeof(client->info.noip) - 4;
 
         do {
-            if (client2->info.noip.name[0] == 0 ||
-                client2->master_id != 0) {
+            if (client2->info.noip.name[0] == 0) {
                 client2 = client2->next;
                 continue;
             }
@@ -1023,7 +1044,7 @@ static void handle_query_list(struct client *client, unsigned sequence) {
     memset(buffer + pos, 0, 4);
     pos += 4;
 
-    respond(client, sequence, buffer, pos);
+    respond(client, socket_index, sequence, buffer, pos);
 }
 
 static int login(struct client *client, const char *password) {
@@ -1071,7 +1092,8 @@ static int login(struct client *client, const char *password) {
     return 1;
 }
 
-static void handle_poll(struct client *client, unsigned sequence) {
+static void handle_poll(struct client *client, unsigned socket_index,
+                        unsigned sequence) {
     client->chat_enabled = 1;
 
     if (client->num_chats > 0) {
@@ -1098,16 +1120,16 @@ static void handle_poll(struct client *client, unsigned sequence) {
                     sizeof(client->chats[0]) * client->num_chats);
 
         /* send packet */
-        respond(client, sequence, buffer, pos);
+        respond(client, socket_index, sequence, buffer, pos);
     } else {
         /* nothing in the queue */
-        respond(client, sequence,
+        respond(client, socket_index, sequence,
                 packet_ack2,
                 sizeof(packet_ack2));
     }
 }
 
-static void handle_packet(struct client *client,
+static void handle_packet(struct client *client, unsigned socket_index,
                           const unsigned char *data, size_t length) {
     unsigned sequence;
 
@@ -1115,17 +1137,22 @@ static void handle_packet(struct client *client,
 
     if (data[2] == 0x0b) {
         if (!client->handshake) {
+            unsigned master_id;
+
+            assert(client->num_sockets == 1);
+
             if (length < 24) {
                 /* too short */
                 client->should_destroy = 1;
                 return;
             }
 
-            client->master_id = read_uint32(data + 20);
-            if (client->master_id != 0) {
+            master_id = read_uint32(data + 20);
+            if (master_id != 0) {
                 struct client *master;
+                int ret;
 
-                master = get_client(client->domain->host, client->master_id);
+                master = get_client(client->domain->host, master_id);
                 if (master == NULL) {
                     if (verbose >= 1)
                         fprintf(stderr, "invalid master id in handshake, killing client %u\n",
@@ -1134,6 +1161,17 @@ static void handle_packet(struct client *client,
                     return;
                 }
 
+                if (verbose >= 2)
+                    printf("appending client %u to %u\n",
+                           client->id, master->id);
+
+                ret = append_client(master, client, &socket_index);
+                if (ret < 0) {
+                    client->should_destroy = 1;
+                    return;
+                }
+
+                client = master;
             }
         }
 
@@ -1141,7 +1179,7 @@ static void handle_packet(struct client *client,
 
         snprintf((char*)packet_handshake_response + 26, 6, "%u", client->domain->host->config->port);
 
-        respond(client, sequence,
+        respond(client, socket_index, sequence,
                 packet_handshake_response,
                 sizeof(packet_handshake_response));
         return;
@@ -1176,36 +1214,36 @@ static void handle_packet(struct client *client,
         if (data[22] == 0x02) {
             /* 00 00 02 00: client polls */
 
-            handle_query_list(client, sequence);
+            handle_query_list(client, socket_index, sequence);
         } else if (data[20] == 0x01 && data[22] == 0x01) {
             /* 01 00 01 00: poll chat */
 
-            handle_poll(client, sequence);
+            handle_poll(client, socket_index, sequence);
         } else if (data[20] == 0x01) {
             /* 01 00 00 00: chat */
 
             /* packets with 0x02 is evil for some reason */
             /* 0x01 = chat */
             /* 0x03 = font and color */
-            if (length < 2048 && client->master_id == 0 &&
+            if (length < 2048 &&
                 (data[52] == 0x01 || data[52] == 0x03))
                 enqueue_chat(client->domain, data + 52, length - 52);
 
-            respond(client, sequence,
+            respond(client, socket_index, sequence,
                     packet_ack,
                     sizeof(packet_ack));
         } else {
             /* 00 00 10 00 or 00 00 00 00: client sends player position */
 
             process_position_update(client, data, length);
-            respond(client, sequence,
+            respond(client, socket_index, sequence,
                     packet_ack,
                     sizeof(packet_ack));
         }
         break;
 
     case 0x0e:
-        respond(client, sequence,
+        respond(client, socket_index, sequence,
                 packet_response2,
                 sizeof(packet_response2));
         break;
@@ -1232,14 +1270,16 @@ static ssize_t select_more_data(int sockfd, unsigned char *buffer,
     return recv(sockfd, buffer, max_len, 0);
 }
 
-static void client_data_available(struct client *client) {
+static void client_data_available(struct client *client, unsigned socket_index) {
     unsigned char buffer[4096];
     ssize_t nbytes;
     struct packet_header *header = (struct packet_header*)buffer;
     size_t position = 0, length;
 
+    assert(socket_index < client->num_sockets);
+
     /* read from stream */
-    nbytes = recv(client->sockfd, buffer, sizeof(buffer), 0);
+    nbytes = recv(client->sockets[socket_index], buffer, sizeof(buffer), 0);
     if (nbytes <= 0) {
         printf("client %u disconnected\n", client->id);
         client->should_destroy = 1;
@@ -1281,7 +1321,7 @@ static void client_data_available(struct client *client) {
         }
 
         /* handle packet */
-        handle_packet(client, buffer + position, length);
+        handle_packet(client, socket_index, buffer + position, length);
 
         nbytes -= (ssize_t)length;
         position += length;
@@ -1296,8 +1336,8 @@ static void client_data_available(struct client *client) {
             memmove(buffer, buffer + position, (size_t)nbytes);
             position = 0;
 
-            ret = select_more_data(client->sockfd, buffer + nbytes,
-                                   sizeof(buffer) - nbytes);
+            ret = select_more_data(client->sockets[socket_index],
+                                   buffer + nbytes, sizeof(buffer) - nbytes);
             if (ret > 0)
                 nbytes += ret;
         }
@@ -1343,6 +1383,8 @@ int main(int argc, char **argv) {
             struct client *client, *next_client = domain->clients_head;
 
             while (next_client != NULL) {
+                unsigned z;
+
                 client = next_client;
                 next_client = client->next;
                 if (next_client == domain->clients_head)
@@ -1350,14 +1392,16 @@ int main(int argc, char **argv) {
 
                 assert(client->domain == domain);
 
-                if (client->should_destroy) {
+                if (client->should_destroy || client->num_sockets == 0) {
                     kill_client(client);
                     continue;
                 }
 
-                FD_SET(client->sockfd, &rfds);
-                if (client->sockfd > max_fd)
-                    max_fd = client->sockfd;
+                for (z = 0; z < client->num_sockets; z++) {
+                    FD_SET(client->sockets[z], &rfds);
+                    if (client->sockets[z] > max_fd)
+                        max_fd = client->sockets[z];
+                }
             }
 
             if (domain != domain_zero && domain->num_clients == 0) {
@@ -1405,6 +1449,8 @@ int main(int argc, char **argv) {
             struct client *client, *next_client = domain->clients_head;
 
             while (next_client != NULL) {
+                unsigned z;
+
                 client = next_client;
                 next_client = client->next;
                 if (next_client == domain->clients_head)
@@ -1412,9 +1458,14 @@ int main(int argc, char **argv) {
 
                 assert(client->domain == domain);
 
-                if (FD_ISSET(client->sockfd, &rfds)) {
-                    FD_CLR(client->sockfd, &rfds);
-                    client_data_available(client);
+                for (z = 0; z < client->num_sockets; z++) {
+                    if (FD_ISSET(client->sockets[z], &rfds)) {
+                        FD_CLR(client->sockets[z], &rfds);
+                        client_data_available(client, z);
+
+                        if (client->should_destroy)
+                            break;
+                    }
                 }
             }
 
