@@ -958,7 +958,7 @@ static void respond(struct client *client, unsigned sequence,
     }
 
     /* dump it */
-    if (verbose >= 4) {
+    if (verbose >= 6) {
         printf("sending to client %u\n", client->id);
         dump_packet(stdout, response, response_length);
         printf("\n");
@@ -1246,7 +1246,7 @@ static void client_data_available(struct client *client) {
         return;
     }
 
-    if (verbose >= 4) {
+    if (verbose >= 6) {
         printf("received from client %u\n", client->id);
         dump_packet(stdout, buffer, (size_t)nbytes);
         printf("\n");
