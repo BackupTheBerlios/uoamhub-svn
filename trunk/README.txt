@@ -49,15 +49,28 @@ Running
 
 Type
 
- ./uoamhub
+ ./uoamhub -D
 
-By default, uoamhub listens on all interfaces on port 2000. Now try to
-connect.
+The "-D" tells uoamhub not to daemonize, i.e. go into background. Now
+try to connect.
 
-If you want to run uoamhub as daemon, either start it in a screen (see
-manpage of screen), or type:
+By default, uoamhub listens on all interfaces on port 2000. If you
+want it to use another port, use the "--port" parameter:
 
- nohup ./uoamhub &
+ ./uoamhub -D --port 2001
+
+Another example, uoamhub as daemon (no "-D") on the default port
+(2000), running as user "uoam", logging to /var/log/uoamhub.log and
+chrooted to /var/lib/uoamhub:
+
+ ./uoamhub --user uoam --chroot /var/lib/uoamhub \
+     --logger "exec /bin/cat >/var/log/uoamhub.log"
+
+You should never run uoamhub as root, you should always use the
+parameter "--user" to change it to an unprivileged user. The chroot is
+another security feature for the paranoid: you may specify an empty,
+read-only directory here, and uoamhub chroots into it (see the man
+page of chroot for more information).
 
 
 Links
