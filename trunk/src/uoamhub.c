@@ -56,6 +56,7 @@ struct chat {
 struct client {
     unsigned id;
     int sockfd;
+    struct domain *domain;
     int handshake:1, have_position:1;
     struct player_info info;
     struct chat *chats[MAX_CHATS];
@@ -173,6 +174,7 @@ static void kill_client(struct domain *domain, unsigned n) {
     assert(domain->num_clients < MAX_CLIENTS);
     assert(domain->num_clients > 0);
     assert(n < domain->num_clients);
+    assert(client->domain == domain);
 
     if (verbose > 0)
         printf("kill_client %u\n", client->id);
@@ -313,8 +315,8 @@ static void process_position_update(struct client *client,
     client->have_position = 1;
 }
 
-static void handle_query_list(struct client *client, unsigned sequence,
-                              struct domain *domain) {
+static void handle_query_list(struct client *client, unsigned sequence) {
+    struct domain *domain = client->domain;
     unsigned char buffer[4096];
     size_t pos;
     unsigned f, num = 0;
@@ -470,6 +472,7 @@ int main(int argc, char **argv) {
                     memset(client, 0, sizeof(*client));
                     client->id = next_client_id++;
                     client->sockfd = ret;
+                    client->domain = &domains[0];
 
                     printf("new client: %u\n", client->id);
                 } else {
@@ -527,7 +530,7 @@ int main(int argc, char **argv) {
                             if (buffer[22] == 0x02) {
                                 /* 00 00 02 00: client polls */
 
-                                handle_query_list(client, sequence, &domains[z]);
+                                handle_query_list(client, sequence);
                             } else if (buffer[20] == 0x01 && buffer[22] == 0x01) {
                                 /* 01 00 01 00: poll chat */
 
