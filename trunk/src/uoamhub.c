@@ -57,7 +57,7 @@ struct client {
     unsigned id;
     int sockfd;
     struct domain *domain;
-    int handshake:1, have_position:1;
+    int should_destroy:1, handshake:1, have_position:1;
     struct player_info info;
     struct chat *chats[MAX_CHATS];
     unsigned num_chats;
@@ -442,12 +442,18 @@ int main(int argc, char **argv) {
         FD_SET(sockfd, &rfds);
         max_fd = sockfd;
         for (z = 0; z < num_domains; z++) {
-            unsigned w;
+            struct client *client = domains[z].clients;
+            int w;
 
-            for (w = 0; w < domains[z].num_clients; w++) {
-                FD_SET(domains[z].clients[w].sockfd, &rfds);
-                if (domains[z].clients[w].sockfd > max_fd)
-                    max_fd = domains[z].clients[w].sockfd;
+            for (w = 0; w < (int)domains[z].num_clients; w++, client++) {
+                if (client->should_destroy < 0) {
+                    kill_client(&domains[z], w--);
+                    client--;
+                } else {
+                    FD_SET(client->sockfd, &rfds);
+                    if (client->sockfd > max_fd)
+                        max_fd = client->sockfd;
+                }
             }
         }
 
@@ -485,9 +491,9 @@ int main(int argc, char **argv) {
 
             for (z = 0; z < num_domains; z++) {
                 struct client *client = domains[z].clients;
-                int w;
+                unsigned w;
 
-                for (w = 0; w < (int)domains[z].num_clients; w++, client++) {
+                for (w = 0; w < domains[z].num_clients; w++, client++) {
                     if (FD_ISSET(client->sockfd, &rfds)) {
                         unsigned char buffer[4096];
                         ssize_t nbytes;
@@ -503,8 +509,7 @@ int main(int argc, char **argv) {
 
                         if (nbytes == 0) {
                             printf("client %u disconnected\n", client->id);
-                            kill_client(&domains[z], w--);
-                            client--;
+                            client->should_destroy = 1;
                             continue;
                         }
 
