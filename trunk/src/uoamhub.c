@@ -71,7 +71,8 @@ struct client {
     unsigned id;
     int sockfd;
     struct domain *domain;
-    int should_destroy:1, handshake:1, authorized:1, have_position:1;
+    int should_destroy:1, handshake:1, authorized:1, have_position:1,
+        chat_enabled:1;
     struct player_info info;
     struct chat *chats[MAX_CHATS];
     unsigned num_chats;
@@ -424,10 +425,7 @@ static void enqueue_client_chat(struct client *client,
                                 const void *data, size_t size) {
     struct chat *chat;
 
-    /*if (client->info.noip.name[0] == 0)
-      continue;*/
-
-    if (client->num_chats >= MAX_CHATS)
+    if (!client->chat_enabled || client->num_chats >= MAX_CHATS)
         return;
 
     chat = malloc(sizeof(*chat) - sizeof(chat->data) + size);
@@ -607,6 +605,8 @@ static struct client *login(struct client *client, const char *password) {
 }
 
 static void handle_poll(struct client *client, unsigned sequence) {
+    client->chat_enabled = 1;
+
     if (client->num_chats > 0) {
         /* send the first chat entry */
         unsigned char buffer[4096];
