@@ -653,6 +653,7 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
             close(1);
             close(2);
             close(sockfd);
+            close(*randomfdp);
 
             execl("/bin/sh", "sh", "-c", config->logger, NULL);
             exit(1);
