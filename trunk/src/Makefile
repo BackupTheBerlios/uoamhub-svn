@@ -1,3 +1,7 @@
+# uoamhub Makefile
+# (c) 2004 Max Kellermann <max@duempel.org>
+# $Id$
+
 # auto-detect a C compiler
 CC := $(shell for i in gcc-3.4 gcc-3.3 gcc cc; do which $$i && break; done )
 
