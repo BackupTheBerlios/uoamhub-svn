@@ -190,35 +190,37 @@ static void kill_client(struct domain *domain, unsigned n) {
                 (domain->num_clients - n) * sizeof(*domain->clients));
 }
 
+static void enqueue_client_chat(struct client *client,
+                                const void *data, size_t size) {
+    struct chat *chat;
+
+    /*if (client->info.noip.name[0] == 0)
+      continue;*/
+
+    if (client->num_chats >= MAX_CHATS)
+        return;
+
+    chat = malloc(sizeof(*chat) - sizeof(chat->data) + size);
+    if (chat == NULL)
+        return;
+
+    printf("  chat_add to %s num=%u\n", client->info.noip.name, client->num_chats);
+
+    chat->size = size;
+    memcpy(chat->data, data, size);
+
+    client->chats[client->num_chats++] = chat;
+}
+
 static void enqueue_chat(struct domain *domain,
                          const void *data, size_t size) {
-    struct client *client;
-    struct chat *chat;
     unsigned z;
 
     assert(size <= 2048);
 
-    printf("entering enqueue_chat\n");
-    for (z = 0, client = domain->clients; z < domain->num_clients;
-         z++, client++) {
-        /*if (client->info.noip.name[0] == 0)
-          continue;*/
-
-        if (client->num_chats >= MAX_CHATS)
-            continue;
-
-        chat = malloc(sizeof(*chat) - sizeof(chat->data) + size);
-        if (chat == NULL)
-            break;
-
-        printf("  chat_add to %s num=%u\n", client->info.noip.name, client->num_chats);
-
-        chat->size = size;
-        memcpy(chat->data, data, size);
-
-        client->chats[client->num_chats++] = chat;
+    for (z = 0; z < domain->num_clients; z++) {
+        enqueue_client_chat(&domain->clients[z], data, size);
     }
-    printf("leaving enqueue_chat\n");
 }
 
 static void dump_packet(FILE *file, unsigned char *data, size_t length) {
