@@ -52,8 +52,7 @@ static int should_exit = 0;
 struct config {
     struct addrinfo *bind_address;
     int no_daemon;
-    const char *logger;
-    const char *chroot_dir;
+    const char *pidfile, *logger, *chroot_dir;
     uid_t uid;
     gid_t gid;
 };
@@ -216,6 +215,7 @@ static void usage(void) {
             " --user username\n"
             " -u username    change user id (don't run uoamhub as root!)\n"
             " -D             don't detach (daemonize)\n"
+            " --pidfile file create a pid file\n"
             "\n"
             );
     exit(1);
@@ -233,6 +233,7 @@ static void read_config(struct config *config, int argc, char **argv) {
         {"chroot", 1, 0, 'r'},
         {"user", 1, 0, 'u'},
         {"logger", 1, 0, 'l'},
+        {"pidfile", 1, 0, 'P'},
         {0,0,0,0}
     };
     unsigned port = 2000;
@@ -269,6 +270,9 @@ static void read_config(struct config *config, int argc, char **argv) {
             break;
         case 'D':
             config->no_daemon = 1;
+            break;
+        case 'P':
+            config->pidfile = optarg;
             break;
         case 'l':
             config->logger = optarg;
@@ -370,6 +374,21 @@ static void setup(struct config *config, int *sockfdp) {
 
         if (verbose >= 3)
             printf("daemonized as pid %d\n", getpid());
+    }
+
+    /* write PID file */
+    if (config->pidfile != NULL) {
+        FILE *file;
+
+        file = fopen(config->pidfile, "w");
+        if (file == NULL) {
+            fprintf(stderr, "failed to create '%s': %s\n",
+                    config->pidfile, strerror(errno));
+            exit(1);
+        }
+
+        fprintf(file, "%d\n", getpid());
+        fclose(file);
     }
 
     /* start logger process */

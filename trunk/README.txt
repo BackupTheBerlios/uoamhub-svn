@@ -64,6 +64,7 @@ Another example, uoamhub as daemon (no "-D") on the default port
 chrooted to /var/lib/uoamhub:
 
  ./uoamhub --user uoam --chroot /var/lib/uoamhub \
+     --pidfile /var/run/uoamhub.pid \
      --logger "exec /bin/cat >/var/log/uoamhub.log"
 
 You should never run uoamhub as root, you should always use the
