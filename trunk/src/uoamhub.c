@@ -378,7 +378,7 @@ static void handle_poll(struct client *client, unsigned sequence) {
 
 int main(int argc, char **argv) {
     struct addrinfo hints, *bind_address;
-    int ret, sockfd, max_fd;
+    int ret, sockfd;
     struct domain domains[MAX_DOMAINS];
     unsigned num_domains = 1, z, next_client_id = 1;
     struct sigaction sa;
@@ -438,6 +438,9 @@ int main(int argc, char **argv) {
 
     /* main loop */
     do {
+        int max_fd;
+
+        /* select() on all sockets */
         FD_ZERO(&rfds);
         FD_SET(sockfd, &rfds);
         max_fd = sockfd;
@@ -463,6 +466,7 @@ int main(int argc, char **argv) {
             exit(1);
         }
 
+        /* read on all sockets where FD_ISSET is true */
         if (ret > 0) {
             if (FD_ISSET(sockfd, &rfds)) {
                 struct sockaddr addr;
@@ -500,6 +504,7 @@ int main(int argc, char **argv) {
                         struct packet_header *header = (struct packet_header*)buffer;
                         unsigned sequence;
 
+                        /* read from stream */
                         nbytes = recv(client->sockfd, buffer, sizeof(buffer), 0);
                         if (verbose >= 4) {
                             printf("received from client %u\n", client->id);
@@ -516,6 +521,7 @@ int main(int argc, char **argv) {
                         if (nbytes < 16)
                             continue;
 
+                        /* check header */
                         if (header->five != 0x05 || header->zero1 != 0x00 ||
                             header->three != 0x03 || header->ten != 0x10) {
                             printf("malformed packet, killing client\n");
@@ -524,8 +530,10 @@ int main(int argc, char **argv) {
                             continue;
                         }
 
+                        /* extract data */
                         sequence = read_uint32(buffer + 12);
 
+                        /* handle packet */
                         switch (header->type) {
                         case 0x0b:
                             client->handshake = 1;
