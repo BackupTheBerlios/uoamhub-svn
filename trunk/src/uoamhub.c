@@ -1155,7 +1155,9 @@ static void respond(struct client *client, unsigned socket_index,
     /* copy packet sequence number */
     write_uint32(response + 12, (uint32_t)sequence);
 
-    /* write the packet length */
+    /* insert packet length and other stuff; that's a hack because
+       I've been too lazy to make response constant and do this in all
+       callers  */
     write_uint32(response + 8, (uint32_t)response_length);
 
     if (response[2] == 0x02)
