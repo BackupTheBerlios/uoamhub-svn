@@ -37,6 +37,10 @@
 static int verbose = 9;
 static int should_exit = 0;
 
+struct config {
+    struct addrinfo *bind_address;
+};
+
 struct noip_player_info {
     char name[64];
     unsigned char reserved[12];
@@ -164,6 +168,34 @@ static int getaddrinfo_helper(const char *host_and_port, int default_port,
         host = "0.0.0.0";
 
     return getaddrinfo(host, port, hints, aip);
+}
+
+static void read_config(struct config *config, int argc, char **argv) {
+    int ret;
+    struct addrinfo hints;
+
+    (void)argc;
+    (void)argv;
+
+    memset(config, 0, sizeof(*config));
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = PF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+
+    ret = getaddrinfo_helper("*", 2000, &hints, &config->bind_address);
+    if (ret < 0) {
+        fprintf(stderr, "getaddrinfo_helper failed: %s\n",
+                strerror(errno));
+        exit(1);
+    }
+}
+
+static void free_config(struct config *config) {
+    if (config->bind_address)
+        freeaddrinfo(config->bind_address);
+
+    memset(config, 0, sizeof(*config));
 }
 
 static void create_client(struct domain *domain, int sockfd, unsigned id) {
@@ -539,31 +571,19 @@ static void client_data_available(struct client *client) {
 }
 
 int main(int argc, char **argv) {
-    struct addrinfo hints, *bind_address;
+    struct config config;
     int ret, sockfd;
     struct domain domains[MAX_DOMAINS];
     unsigned num_domains = 1, z, next_client_id = 1;
     struct sigaction sa;
     fd_set rfds;
 
-    (void)argc;
-    (void)argv;
+    read_config(&config, argc, argv);
 
     /* create domain 0 */
     memset(domains, 0, sizeof(domains[0]));
 
     /* server socket stuff */
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = PF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-
-    ret = getaddrinfo_helper("*", 2000, &hints, &bind_address);
-    if (ret < 0) {
-        fprintf(stderr, "getaddrinfo_helper failed: %s\n",
-                strerror(errno));
-        exit(1);
-    }
-
     sockfd = socket(PF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) {
         fprintf(stderr, "failed to create socket: %s\n",
@@ -571,8 +591,8 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
-    ret = bind(sockfd, bind_address->ai_addr,
-               bind_address->ai_addrlen);
+    ret = bind(sockfd, config.bind_address->ai_addr,
+               config.bind_address->ai_addrlen);
     if (ret < 0) {
         fprintf(stderr, "failed to bind: %s\n",
                 strerror(errno));
@@ -680,4 +700,6 @@ int main(int argc, char **argv) {
             close(client->sockfd);
         }
     }
+
+    free_config(&config);
 }
