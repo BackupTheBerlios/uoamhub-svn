@@ -299,20 +299,39 @@ static void usage(void) {
             "valid options:\n"
             " -h             help (this text)\n"
             " -V             print version number\n"
+#ifdef __GLIBC__
             " --verbose\n"
+#endif
             " -v             increase verbosity (default 1)\n"
+#ifdef __GLIBC__
             " --quiet\n"
+#endif
             " -q             reset verbosity to 0\n"
-            " --password file    single-domain, only accept the password from the file\n"
+#ifdef __GLIBC__
+            " --password file\n"
+#endif
+            " -w file        single-domain, only accept the password from the file\n"
+#ifdef __GLIBC__
             " --port port\n"
+#endif
             " -p port        listen on this port (default 2000)\n"
+#ifdef __GLIBC__
             " --logger program\n"
+#endif
             " -l program     specifies a logger program (executed by /bin/sh)\n"
-            " --chroot dir   chroot into this directory (requires root)\n"
+#ifdef __GLIBC__
+            " --chroot dir\n"
+#endif
+            " -r dir         chroot into this directory (requires root)\n"
+#ifdef __GLIBC__
             " --user username\n"
+#endif
             " -u username    change user id (don't run uoamhub as root!)\n"
             " -D             don't detach (daemonize)\n"
-            " --pidfile file create a pid file\n"
+#ifdef __GLIBC__
+            " --pidfile file\n"
+#endif
+            " -P file        create a pid file\n"
             "\n"
             );
     exit(1);
