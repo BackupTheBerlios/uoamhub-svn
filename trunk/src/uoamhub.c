@@ -52,6 +52,7 @@ static int verbose = 1;
 static int should_exit = 0;
 
 struct config {
+    unsigned port;
     struct addrinfo *bind_address;
     char *password;
     int no_daemon;
@@ -281,11 +282,11 @@ static void read_config(struct config *config, int argc, char **argv) {
         {"password", 1, 0, 'w'},
         {0,0,0,0}
     };
-    unsigned port = 2000;
     struct passwd *pw;
     struct stat st;
 
     memset(config, 0, sizeof(*config));
+    config->port = 2000;
 
     while (1) {
         int option_index = 0;
@@ -308,8 +309,8 @@ static void read_config(struct config *config, int argc, char **argv) {
         case 'h':
             usage();
         case 'p':
-            port = (unsigned)strtoul(optarg, NULL, 10);
-            if (port == 0) {
+            config->port = (unsigned)strtoul(optarg, NULL, 10);
+            if (config->port == 0) {
                 fprintf(stderr, "invalid port specification\n");
                 exit(1);
             }
@@ -384,7 +385,7 @@ static void read_config(struct config *config, int argc, char **argv) {
     hints.ai_family = PF_INET;
     hints.ai_socktype = SOCK_STREAM;
 
-    ret = getaddrinfo_helper("*", port, &hints, &config->bind_address);
+    ret = getaddrinfo_helper("*", config->port, &hints, &config->bind_address);
     if (ret < 0) {
         fprintf(stderr, "getaddrinfo_helper failed: %s\n",
                 strerror(errno));
@@ -1136,6 +1137,9 @@ static void handle_packet(struct client *client,
         }
 
         client->handshake = 1;
+
+        snprintf((char*)packet_handshake_response + 26, 6, "%u", client->domain->host->config->port);
+
         respond(client, sequence,
                 packet_handshake_response,
                 sizeof(packet_handshake_response));
