@@ -32,6 +32,8 @@
 
 #define MAX_DOMAINS 8
 #define MAX_CLIENTS 64
+#define MAX_CHATS 8
+
 static int verbose = 9;
 static int should_exit = 0;
 
@@ -46,10 +48,17 @@ struct player_info {
     struct noip_player_info noip;
 };
 
+struct chat {
+    size_t size;
+    char data[1];
+};
+
 struct client {
     int sockfd;
     int handshake:1;
     struct player_info info;
+    struct chat *chats[MAX_CHATS];
+    unsigned num_chats;
 };
 
 struct domain {
@@ -89,6 +98,13 @@ static unsigned char packet_ack2[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00,
+};
+
+static unsigned char packet_chat[] = {
+    0x05, 0x00, 0x02, 0x03, 0x10, 0x00, 0x00, 0x00,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0xa8, 0x5f, 0x6a, 0x00,
 };
 
 static unsigned char packet_poll[] = {
@@ -149,6 +165,9 @@ static int getaddrinfo_helper(const char *host_and_port, int default_port,
 }
 
 static void kill_client(struct domain *domain, unsigned n) {
+    unsigned z;
+    struct client *client = &domain->clients[n];
+
     assert(domain != NULL);
     assert(domain->num_clients < MAX_CLIENTS);
     assert(domain->num_clients > 0);
@@ -158,11 +177,44 @@ static void kill_client(struct domain *domain, unsigned n) {
 
     close(domain->clients[n].sockfd);
 
+    for (z = 0; z < client->num_chats; z++) {
+        free(client->chats[z]);
+    }
+
     domain->num_clients--;
 
     if (n < domain->num_clients)
         memmove(domain->clients + n, domain->clients + n + 1,
                 (domain->num_clients - n) * sizeof(*domain->clients));
+}
+
+static void enqueue_chat(struct domain *domain,
+                         const void *data, size_t size) {
+    struct client *client;
+    struct chat *chat;
+    unsigned z;
+
+    printf("entering enqueue_chat\n");
+    for (z = 0, client = domain->clients; z < domain->num_clients;
+         z++, client++) {
+        /*if (client->info.noip.name[0] == 0)
+          continue;*/
+
+        if (client->num_chats >= MAX_CHATS)
+            continue;
+
+        chat = malloc(sizeof(*chat) - sizeof(chat->data) + size);
+        if (chat == NULL)
+            break;
+
+        printf("  chat_add to %s num=%u\n", client->info.noip.name, client->num_chats);
+
+        chat->size = size;
+        memcpy(chat->data, data, size);
+
+        client->chats[client->num_chats++] = chat;
+    }
+    printf("leaving enqueue_chat\n");
 }
 
 static void respond(struct client *client, unsigned char *request,
@@ -298,7 +350,7 @@ int main(int argc, char **argv) {
 
                 for (w = 0; w < domains[z].num_clients; w++, client++) {
                     if (FD_ISSET(client->sockfd, &rfds)) {
-                        unsigned char buffer[4096];
+                        unsigned char buffer[4096], buffer2[4096];
                         ssize_t nbytes, i;
                         struct packet_header *header = (struct packet_header*)buffer;
 
@@ -339,12 +391,11 @@ int main(int argc, char **argv) {
 
                         case 0x00:
                             if (buffer[22] == 0x02) {
-                                /* client polls */
+                                /* 00 00 02 00: client polls */
                                 size_t pos;
                                 unsigned f, num = 0;
 
-                                memcpy(buffer, packet_poll, sizeof(packet_poll));
-
+                                memcpy(buffer2, packet_poll, sizeof(packet_poll));
                                 pos = sizeof(packet_poll);
 
                                 printf("making poll packet pos=%u: %u\n", pos, domains[z].num_clients);
@@ -352,31 +403,79 @@ int main(int argc, char **argv) {
                                     if (domains[z].clients[f].info.noip.name[0] == 0)
                                         continue;
                                     printf("adding client info %s\n", domains[z].clients[f].info.noip.name);
-                                    memcpy(buffer + pos, &domains[z].clients[f].info.noip,
+                                    memcpy(buffer2 + pos, &domains[z].clients[f].info.noip,
                                            sizeof(domains[z].clients[f].info.noip));
                                     num++;
                                     pos += sizeof(client->info.noip);
                                 }
                                 printf("after client loop pos=%u\n", pos);
 
-                                buffer[24] = (unsigned char)num;
-                                buffer[32] = (unsigned char)num;
+                                buffer2[24] = (unsigned char)num;
+                                buffer2[32] = (unsigned char)num;
 
-                                memset(buffer + pos, 0, 4);
+                                memset(buffer2 + pos, 0, 4);
                                 pos += 4;
 
-                                buffer[8] = pos & 0xff;
-                                buffer[9] = (pos >> 8) & 0xff;
-                                buffer[16] = (pos - 24) & 0xff;
-                                buffer[17] = ((pos - 24) >> 8) & 0xff;
+                                buffer2[8] = pos & 0xff;
+                                buffer2[9] = (pos >> 8) & 0xff;
+                                buffer2[10] = 0;
+                                buffer2[11] = 0;
+                                buffer2[16] = (pos - 24) & 0xff;
+                                buffer2[17] = ((pos - 24) >> 8) & 0xff;
+                                buffer2[18] = 0;
+                                buffer2[19] = 0;
 
-                                respond(client, buffer, buffer, pos);
+                                respond(client, buffer, buffer2, pos);
+                            } else if (buffer[20] == 0x01 && buffer[22] == 0x01) {
+                                /* 01 00 01 00: poll chat */
+
+                                printf("poll_chat num=%u\n", client->num_chats);
+
+                                if (client->num_chats > 0) {
+                                    size_t pos;
+
+                                    memcpy(buffer2, packet_chat, sizeof(packet_chat));
+                                    pos = sizeof(packet_chat);
+
+                                    memcpy(buffer2 + pos, client->chats[0]->data,
+                                           client->chats[0]->size);
+                                    pos += client->chats[0]->size;
+
+                                    free(client->chats[0]);
+                                    client->num_chats--;
+                                    if (client->num_chats > 0)
+                                        memmove(client->chats, client->chats + 1,
+                                                sizeof(client->chats[0]) * client->num_chats);
+
+                                    memset(buffer2 + pos, 0, 5);
+                                    pos += 5;
+
+                                    buffer2[8] = pos & 0xff;
+                                    buffer2[9] = (pos >> 8) & 0xff;
+                                    buffer2[10] = 0;
+                                    buffer2[11] = 0;
+                                    buffer2[16] = (pos - 24) & 0xff;
+                                    buffer2[17] = ((pos - 24) >> 8) & 0xff;
+                                    buffer2[18] = 0;
+                                    buffer2[19] = 0;
+
+                                    respond(client, buffer, buffer2, pos);
+                                } else {
+                                    respond(client, buffer,
+                                            packet_ack2,
+                                            sizeof(packet_ack2));
+                                }
                             } else if (buffer[20] == 0x01) {
+                                /* 01 00 00 00: client sends chat message */
+                                if (buffer[52] == 0x01)
+                                    enqueue_chat(&domains[z], buffer + 60,
+                                                 (size_t)nbytes - 60);
+
                                 respond(client, buffer,
-                                        packet_ack2,
-                                        sizeof(packet_ack2));
+                                        packet_ack,
+                                        sizeof(packet_ack));
                             } else {
-                                /* client sends player position */
+                                /* 00 00 10 00 or 00 00 00 00: client sends player position */
 
                                 memcpy(&client->info, buffer + 44, sizeof(client->info));
 
