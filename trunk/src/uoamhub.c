@@ -43,8 +43,8 @@
 #include <pwd.h>
 #include <grp.h>
 
-#define MAX_DOMAINS 8
-#define MAX_CLIENTS 64
+#define MAX_DOMAINS 64
+#define MAX_CLIENTS 256
 #define MAX_CHATS 8
 
 static const char VERSION[] = "0.1.0";
