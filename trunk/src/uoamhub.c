@@ -54,6 +54,7 @@ struct chat {
 };
 
 struct client {
+    unsigned id;
     int sockfd;
     int handshake:1;
     struct player_info info;
@@ -240,7 +241,7 @@ int main(int argc, char **argv) {
     struct addrinfo hints, *bind_address;
     int ret, sockfd, max_fd;
     struct domain domains[MAX_DOMAINS];
-    unsigned num_domains = 1, z, w;
+    unsigned num_domains = 1, z, w, next_client_id = 1;
     struct sigaction sa;
     fd_set rfds;
 
@@ -335,10 +336,11 @@ int main(int argc, char **argv) {
                 if (domains[0].num_clients < MAX_CLIENTS) {
                     struct client *client = &domains[0].clients[domains[0].num_clients++];
 
-                    printf("client connected\n");
-
                     memset(client, 0, sizeof(*client));
+                    client->id = next_client_id++;
                     client->sockfd = ret;
+
+                    printf("new client: %u\n", client->id);
                 } else {
                     /* sorry, domain 0 is full */
                     close(sockfd);
