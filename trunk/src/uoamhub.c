@@ -848,6 +848,8 @@ static struct client *create_client(struct domain *domain, int sockfd,
     memcpy(&client->address, addr, addrlen);
 #endif /* DISABLE_LOGGING */
 
+    /* a good random client id is vitally important for security,
+       because secondary connections authorized themselves with it */
     nbytes = read(randomfd, &client->id, sizeof(client->id));
     if (nbytes < (ssize_t)sizeof(client->id)) {
         fprintf(stderr, "random number generation failed\n");
@@ -871,7 +873,7 @@ static struct client *create_client(struct domain *domain, int sockfd,
         return NULL;
     }
 
-    log(1, "new client: %s\n", client->name);
+    log(2, "new client: %s\n", client->name);
 
     return client;
 }
@@ -893,13 +895,14 @@ static int append_client(struct client *dest, struct client *src,
            src->num_sockets * sizeof(dest->sockets[0]));
     dest->num_sockets += src->num_sockets;
     src->num_sockets = 0;
+    src->should_destroy = 1;
 
     return 0;
 }
 
 /** kill a client */
 static void kill_client(struct client *client) {
-    log(1, "kill_client %s\n", client->name);
+    log(2, "kill_client %s\n", client->name);
 
     remove_client(client);
     free_client(client);
@@ -1524,7 +1527,7 @@ static void client_data_available(struct client *client,
     /* read from stream */
     nbytes = recv(client->sockets[socket_index], buffer, sizeof(buffer), 0);
     if (nbytes <= 0) {
-        log(1, "client %s[%u] disconnected\n", client->name, socket_index);
+        log(2, "client %s[%u] disconnected\n", client->name, socket_index);
         close(client->sockets[socket_index]);
         client->sockets[socket_index] = -1;
         return;
@@ -1642,7 +1645,13 @@ int main(int argc, char **argv) {
 
                 assert(client->domain == domain);
 
-                if (client->should_destroy || client->num_sockets == 0) {
+                if (client->should_destroy) {
+                    kill_client(client);
+                    continue;
+                }
+
+                if (client->num_sockets == 0) {
+                    log(1, "client %s disconnected\n", client->name);
                     kill_client(client);
                     continue;
                 }
