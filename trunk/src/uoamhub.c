@@ -548,64 +548,67 @@ int main(int argc, char **argv) {
             exit(1);
         }
 
+        if (ret == 0) {
+            fprintf(stderr, "select returned zero\n");
+            sleep(1);
+        }
+
         /* read on all sockets where FD_ISSET is true */
-        if (ret > 0) {
-            if (FD_ISSET(sockfd, &rfds)) {
-                struct sockaddr addr;
-                socklen_t addrlen = sizeof(addr);
+        if (FD_ISSET(sockfd, &rfds)) {
+            struct sockaddr addr;
+            socklen_t addrlen = sizeof(addr);
 
-                ret = accept(sockfd, &addr, &addrlen);
-                if (ret < 0) {
-                    fprintf(stderr, "accept failed: %s\n", strerror(errno));
-                    exit(1);
-                }
-
-                create_client(&domains[0], ret, next_client_id++);
+            ret = accept(sockfd, &addr, &addrlen);
+            if (ret < 0) {
+                fprintf(stderr, "accept failed: %s\n", strerror(errno));
+                exit(1);
             }
 
-            for (z = 0; z < num_domains; z++) {
-                struct client *client = domains[z].clients;
-                unsigned w;
+            create_client(&domains[0], ret, next_client_id++);
+        }
 
-                for (w = 0; w < domains[z].num_clients; w++, client++) {
-                    if (FD_ISSET(client->sockfd, &rfds)) {
-                        unsigned char buffer[4096];
-                        ssize_t nbytes;
-                        struct packet_header *header = (struct packet_header*)buffer;
-                        unsigned sequence;
+        for (z = 0; z < num_domains; z++) {
+            struct client *client = domains[z].clients;
+            unsigned w;
 
-                        /* read from stream */
-                        nbytes = recv(client->sockfd, buffer, sizeof(buffer), 0);
-                        if (verbose >= 4) {
-                            printf("received from client %u\n", client->id);
-                            dump_packet(stdout, buffer, (size_t)nbytes);
-                            printf("\n");
-                        }
+            for (w = 0; w < domains[z].num_clients; w++, client++) {
+                if (FD_ISSET(client->sockfd, &rfds)) {
+                    unsigned char buffer[4096];
+                    ssize_t nbytes;
+                    struct packet_header *header = (struct packet_header*)buffer;
+                    unsigned sequence;
 
-                        if (nbytes == 0) {
-                            printf("client %u disconnected\n", client->id);
-                            client->should_destroy = 1;
-                            continue;
-                        }
-
-                        if (nbytes < 16)
-                            continue;
-
-                        /* check header */
-                        if (header->five != 0x05 || header->zero1 != 0x00 ||
-                            header->three != 0x03 || header->ten != 0x10) {
-                            printf("malformed packet, killing client\n");
-                            kill_client(&domains[z], w--);
-                            client--;
-                            continue;
-                        }
-
-                        /* extract data */
-                        sequence = read_uint32(buffer + 12);
-
-                        /* handle packet */
-                        handle_packet(client, buffer, (size_t)nbytes);
+                    /* read from stream */
+                    nbytes = recv(client->sockfd, buffer, sizeof(buffer), 0);
+                    if (verbose >= 4) {
+                        printf("received from client %u\n", client->id);
+                        dump_packet(stdout, buffer, (size_t)nbytes);
+                        printf("\n");
                     }
+
+                    if (nbytes == 0) {
+                        printf("client %u disconnected\n", client->id);
+                        client->should_destroy = 1;
+                        continue;
+                    }
+
+                    if (nbytes < 16)
+                        continue;
+
+                    /* check header */
+                    if (header->five != 0x05 || header->zero1 != 0x00 ||
+                        header->three != 0x03 || header->ten != 0x10) {
+                        printf("malformed packet, killing client\n");
+                        kill_client(&domains[z], w--);
+                        client--;
+                        continue;
+                    }
+
+                    /* extract data */
+                    sequence = read_uint32(buffer + 12);
+
+                    /* handle packet */
+                    handle_packet(client, buffer, (size_t)nbytes);
                 }
             }
         }
