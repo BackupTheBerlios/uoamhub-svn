@@ -1403,71 +1403,84 @@ static void handle_packet(struct client *client, unsigned socket_index,
         return;
     }
 
-    switch (data[2]) {
-    case 0x00:
-        if (!client->authorized) {
-            int ret;
-
-            if (memchr(data + 24, 0, 20) == NULL) {
-                log(1, "malformed password field from, killing client %s\n",
-                    client->name);
-                client->should_destroy = 1;
-                return;
-            }
-
-            ret = login(client, (const char*)(data + 24));
-            if (!ret)
-                return;
-        }
-
-        if (data[22] == 0x02) {
-            /* 00 00 02 00: client polls */
-
-            handle_query_list(client, socket_index, sequence);
-        } else if (data[20] == 0x01 && data[22] == 0x01) {
-            /* 01 00 01 00: poll chat */
-
-            handle_poll(client, socket_index, sequence);
-        } else if (data[20] == 0x01) {
-            /* 01 00 00 00: chat */
-
-            /* packets with 0x02 is evil for some reason */
-            /* 0x01 = chat */
-            /* 0x03 = font and color */
-            if (length < 2048 &&
-                (data[52] == 0x01 || data[52] == 0x03))
-                enqueue_chat(client->domain, data + 52, length - 52);
-
-            if (data[52] == 0x03) {
-                if (client->font_buffer != NULL)
-                    free(client->font_buffer);
-                client->font_buffer_size = length - 52;
-                client->font_buffer = malloc(client->font_buffer_size);
-                if (client->font_buffer != NULL) {
-                    memcpy(client->font_buffer, data + 52, client->font_buffer_size);
-                }
-            }
-
-            respond(client, socket_index, sequence,
-                    packet_ack,
-                    sizeof(packet_ack));
-        } else {
-            /* 00 00 10 00 or 00 00 00 00: client sends player position */
-
-            if (length == 0x8c)
-                process_position_update(client, data, length);
-
-            respond(client, socket_index, sequence,
-                    packet_ack,
-                    sizeof(packet_ack));
-        }
-        break;
-
-    case 0x0e:
+    /* the "0x0e" packet */
+    if (data[2] == 0x0e) {
+        /* some strange packet. dunno what this is, but we respond
+           something */
         respond(client, socket_index, sequence,
                 packet_response2,
                 sizeof(packet_response2));
-        break;
+        return;
+    }
+
+    /* the rest must be 0x00 */
+    if (data[2] != 0x00) {
+        log(1, "unknown code from client %s, killing\n",
+            client->name);
+        client->should_destroy = 1;
+        return;
+    }
+
+    /* handle login */
+    if (!client->authorized) {
+        /* the password is sent with every 0x00 packet (what a waste);
+           we use the first 0x00 packet to log in and ignore all
+           following passwords */
+        int ret;
+
+        if (memchr(data + 24, 0, 20) == NULL) {
+            log(1, "malformed password field from, killing client %s\n",
+                client->name);
+            client->should_destroy = 1;
+            return;
+        }
+
+        ret = login(client, (const char*)(data + 24));
+        if (!ret)
+            return;
+    }
+
+    /* now check the 0x00 subtype */
+    if (data[22] == 0x02) {
+        /* 00 00 02 00: client polls */
+
+        handle_query_list(client, socket_index, sequence);
+    } else if (data[20] == 0x01 && data[22] == 0x01) {
+        /* 01 00 01 00: poll chat */
+
+        handle_poll(client, socket_index, sequence);
+    } else if (data[20] == 0x01) {
+        /* 01 00 00 00: chat */
+
+        /* packets with 0x02 is evil for some reason */
+        /* 0x01 = chat */
+        /* 0x03 = font and color */
+        if (length < 2048 &&
+            (data[52] == 0x01 || data[52] == 0x03))
+            enqueue_chat(client->domain, data + 52, length - 52);
+
+        if (data[52] == 0x03) {
+            if (client->font_buffer != NULL)
+                free(client->font_buffer);
+            client->font_buffer_size = length - 52;
+            client->font_buffer = malloc(client->font_buffer_size);
+            if (client->font_buffer != NULL) {
+                memcpy(client->font_buffer, data + 52, client->font_buffer_size);
+            }
+        }
+
+        respond(client, socket_index, sequence,
+                packet_ack,
+                sizeof(packet_ack));
+    } else {
+        /* 00 00 10 00 or 00 00 00 00: client sends player position */
+
+        if (length == 0x8c)
+            process_position_update(client, data, length);
+
+        respond(client, socket_index, sequence,
+                packet_ack,
+                sizeof(packet_ack));
     }
 }
 
