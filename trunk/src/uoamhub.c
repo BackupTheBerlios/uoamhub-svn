@@ -256,7 +256,7 @@ static void dump_packet(FILE *file, unsigned char *data, size_t length) {
     }
 }
 
-static uint32_t read_uint32(unsigned char *buffer) {
+static uint32_t read_uint32(const unsigned char *buffer) {
     return buffer[0] |
         buffer[1] << 8 |
         buffer[2] << 16 |
@@ -373,6 +373,56 @@ static void handle_poll(struct client *client, unsigned sequence) {
         respond(client, sequence,
                 packet_ack2,
                 sizeof(packet_ack2));
+    }
+}
+
+static void handle_packet(struct client *client,
+                          const unsigned char *data, size_t length) {
+    unsigned sequence;
+
+    sequence = read_uint32(data + 12);
+
+    switch (data[2]) {
+    case 0x0b:
+        client->handshake = 1;
+        respond(client, sequence,
+                packet_handshake_response,
+                sizeof(packet_handshake_response));
+        break;
+
+    case 0x00:
+        if (data[22] == 0x02) {
+            /* 00 00 02 00: client polls */
+
+            handle_query_list(client, sequence);
+        } else if (data[20] == 0x01 && data[22] == 0x01) {
+            /* 01 00 01 00: poll chat */
+
+            handle_poll(client, sequence);
+        } else if (data[20] == 0x01) {
+            /* 01 00 00 00: chat */
+
+            if (data[52] == 0x01 && length < 2048)
+                enqueue_chat(client->domain, data + 60, length - 60);
+
+            respond(client, sequence,
+                    packet_ack,
+                    sizeof(packet_ack));
+        } else {
+            /* 00 00 10 00 or 00 00 00 00: client sends player position */
+
+            process_position_update(client, data, length);
+            respond(client, sequence,
+                    packet_ack,
+                    sizeof(packet_ack));
+        }
+        break;
+
+    case 0x0e:
+        respond(client, sequence,
+                packet_response2,
+                sizeof(packet_response2));
+        break;
     }
 }
 
@@ -534,49 +584,7 @@ int main(int argc, char **argv) {
                         sequence = read_uint32(buffer + 12);
 
                         /* handle packet */
-                        switch (header->type) {
-                        case 0x0b:
-                            client->handshake = 1;
-                            respond(client, sequence,
-                                    packet_handshake_response,
-                                    sizeof(packet_handshake_response));
-                            break;
-
-                        case 0x00:
-                            if (buffer[22] == 0x02) {
-                                /* 00 00 02 00: client polls */
-
-                                handle_query_list(client, sequence);
-                            } else if (buffer[20] == 0x01 && buffer[22] == 0x01) {
-                                /* 01 00 01 00: poll chat */
-
-                                handle_poll(client, sequence);
-                            } else if (buffer[20] == 0x01) {
-                                /* 01 00 00 00: chat */
-
-                                if (buffer[52] == 0x01 && nbytes < 2048)
-                                    enqueue_chat(&domains[z], buffer + 60,
-                                                 (size_t)nbytes - 60);
-
-                                respond(client, sequence,
-                                        packet_ack,
-                                        sizeof(packet_ack));
-                            } else {
-                                /* 00 00 10 00 or 00 00 00 00: client sends player position */
-
-                                process_position_update(client, buffer, (size_t)nbytes);
-                                respond(client, sequence,
-                                        packet_ack,
-                                        sizeof(packet_ack));
-                            }
-                            break;
-
-                        case 0x0e:
-                            respond(client, sequence,
-                                    packet_response2,
-                                    sizeof(packet_response2));
-                            break;
-                        }
+                        handle_packet(client, buffer, (size_t)nbytes);
                     }
                 }
             }
