@@ -250,19 +250,36 @@ static void dump_packet(FILE *file, unsigned char *data, size_t length) {
     }
 }
 
+static void write_uint32(unsigned char *buffer, uint32_t value) {
+    buffer[0] = value & 0xff;
+    buffer[1] = (value >> 8) & 0xff;
+    buffer[2] = (value >> 16) & 0xff;
+    buffer[3] = (value >> 24) & 0xff;
+}
+
 static void respond(struct client *client, unsigned char *request,
                     unsigned char *response, size_t response_length) {
     assert(response_length >= 16);
+    assert(response[2] != 0x02 || response_length >= 24);
 
+    /* copy packet sequence number */
     memcpy(response + 12, request + 12, 4);
 
-    send(client->sockfd, response, response_length, 0);
+    /* write the packet length */
+    write_uint32(response + 8, (uint32_t)response_length);
 
+    if (response[2] == 0x02)
+        write_uint32(response + 16, (uint32_t)(response_length - 24));
+
+    /* dump it */
     if (verbose >= 4) {
         printf("sending to client %u\n", client->id);
         dump_packet(stdout, response, response_length);
         printf("\n");
     }
+
+    /* send it */
+    send(client->sockfd, response, response_length, 0);
 }
 
 int main(int argc, char **argv) {
@@ -435,15 +452,6 @@ int main(int argc, char **argv) {
                                 memset(buffer2 + pos, 0, 4);
                                 pos += 4;
 
-                                buffer2[8] = pos & 0xff;
-                                buffer2[9] = (pos >> 8) & 0xff;
-                                buffer2[10] = 0;
-                                buffer2[11] = 0;
-                                buffer2[16] = (pos - 24) & 0xff;
-                                buffer2[17] = ((pos - 24) >> 8) & 0xff;
-                                buffer2[18] = 0;
-                                buffer2[19] = 0;
-
                                 respond(client, buffer, buffer2, pos);
                             } else if (buffer[20] == 0x01 && buffer[22] == 0x01) {
                                 /* 01 00 01 00: poll chat */
@@ -466,15 +474,6 @@ int main(int argc, char **argv) {
 
                                     memset(buffer2 + pos, 0, 5);
                                     pos += 5;
-
-                                    buffer2[8] = pos & 0xff;
-                                    buffer2[9] = (pos >> 8) & 0xff;
-                                    buffer2[10] = 0;
-                                    buffer2[11] = 0;
-                                    buffer2[16] = (pos - 24) & 0xff;
-                                    buffer2[17] = ((pos - 24) >> 8) & 0xff;
-                                    buffer2[18] = 0;
-                                    buffer2[19] = 0;
 
                                     respond(client, buffer, buffer2, pos);
                                 } else {
