@@ -1,0 +1,111 @@
+uoamhub
+=======
+
+$Id$
+
+(c) 2004 Max Kellermann (max@duempel.org)
+
+
+What is uoamhub?
+----------------
+
+uoamhub is a dedicated server for UOAutoMap.  UOAutoMap is written by
+Steve Blanding, and is an explicitly non-free map tracking tool for
+Ultima Online, which has networking features with a proprietary,
+undocumented protocol.
+
+"Distribution of UOAM.exe is strictly prohibited.", "Neither UOAM.exe
+nor its associated binary files may be modified in any way without the
+auto's permissions"
+
+Unlike UOAutoMap itself, you are free to share uoamhub with your
+friends, even the source code is available. This means, you can
+improve uoamhub if you want to. All without asking for my
+permission. If you do, please send me your changes. Please read the
+file COPYING for details.
+
+
+Compilation
+-----------
+
+You do not need this, if you downloaded a binary distribution of
+uoamhub.
+
+uoamhub runs on Linux (should run on all distributions), FreeBSD and
+similar operating systems; maybe MacOS X, OpenBSD, NetBSD, AIX,
+Solaris, HP/UX, Windows/Cygwin and many others - but I havn't tested
+that. Please tell me whether it does.
+
+You need gcc and make. Go to the source directory and type:
+
+ make
+
+This will result in the binary named "uoamhub".
+
+
+Running
+-------
+
+Type
+
+ ./uoamhub
+
+By default, uoamhub listens on all interfaces on port 2000. Now try to
+connect.
+
+If you want to run uoamhub as daemon, either start it in a screen (see
+manpage of screen), or type:
+
+ nohup ./uoamhub &
+
+
+Links
+-----
+
+http://max.kellermann.name/projects/uoamhub/
+
+http://uoam.net/
+http://uo.com/
+
+
+To Steve
+--------
+
+I know you refused to disclose the UOAutoMap protocol for "security
+reasons". I really don't share your idea of "security" and I fail to
+understand how are improving it by not disclosing the protocol.
+Anyway, I did find out without your help in less than 2 hours. That
+for the "security".
+
+I am quite sure you are currently thinking about changing the
+protocol, so I can't break it again in 2 hours. Don't be silly.
+
+If I really want to, I will reverse engineer it again and again. In
+the end, you are bringing a lot of pain to your users with daily
+incompatible upgrades, but uoamhub will remain. Don't. The UOAutoMap
+protocol is good enough, despite being a bit inefficient (both in
+bandwidth and in latency).
+
+There is a huge demand for a headless dedicated UOAutoMap server on
+Linux and many other operating systems, so everybody can run a server
+on their cheap Linux root server or with a shell account. The uoamhub
+project delivers exactly this. That's a GoodThing(TM).
+
+
+Legal
+-----
+
+Copyright 2004 Max Kellermann (max@duempel.org)
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; version 2 of the License.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.

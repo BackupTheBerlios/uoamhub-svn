@@ -19,6 +19,13 @@
  *
  */
 
+/*
+ * dedicated server for UOAutoMap (which is non-free)
+ *
+ * Home page: http://max.kellermann.name/projects/uoamhub/
+ *
+ */
+
 #include <assert.h>
 #include <sys/types.h>
 #include <sys/socket.h>
