@@ -488,6 +488,7 @@ static void client_data_available(struct client *client) {
 
     while (nbytes > 0) {
         if (nbytes < 16) {
+            /* we need 16 bytes for a header */
             fprintf(stderr, "packet from client %u is too small (%lu bytes)\n",
                    client->id, (unsigned long)nbytes);
             client->should_destroy = 1;
@@ -503,7 +504,7 @@ static void client_data_available(struct client *client) {
             return;
         }
 
-        /* extract data */
+        /* length check - check if the UOAM packet length is OK */
         length = read_uint32(buffer + 8);
 
         if (length < 16 || length > (size_t)nbytes) {
@@ -519,7 +520,10 @@ static void client_data_available(struct client *client) {
         nbytes -= (ssize_t)length;
         position += length;
 
-        /* try to read more data */
+        /* try to read more data - the first read may have stopped at
+           the buffer boundary, i.e. the rest of a packet may come
+           with the next recv() call, so do it here to prevent an
+           error at the length check */
         if (nbytes > 0) {
             ssize_t ret;
 
