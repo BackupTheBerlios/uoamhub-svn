@@ -916,7 +916,7 @@ static void dump_packet(FILE *file, unsigned char *data, size_t length) {
 
         fprintf(file, " ");
         for (x = 0; x < columns; x++)
-            fputc(data[x] >= 0x20 ? data[x] : '.', file);
+            fputc(data[x] >= 0x20 && data[x] < 0x80 ? data[x] : '.', file);
 
         fprintf(file, "\n");
     }
