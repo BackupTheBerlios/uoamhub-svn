@@ -1648,6 +1648,8 @@ int main(int argc, char **argv) {
     }
 
     /* main loop */
+    log(1, "starting uoamhub v%s\n", VERSION);
+
     do {
         fd_set rfds;
         int max_fd;
@@ -1785,6 +1787,6 @@ int main(int argc, char **argv) {
 
     free_config(&config);
 
-    log(2, "exiting process %d\n", getpid());
+    log(1, "exiting uoamhub v%s\n", VERSION);
     return 0;
 }
