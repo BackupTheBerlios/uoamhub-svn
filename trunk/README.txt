@@ -74,6 +74,22 @@ read-only directory here, and uoamhub chroots into it (see the man
 page of chroot for more information).
 
 
+* Password protection
+
+By default, uoamhub acts as an open system, i.e. it accepts all
+passwords, and all users who chose the same password are in the same
+"domain", they can see each others. This allows you to set up a secure
+server which can be used by many user groups at the same time.
+
+If you want to use the server only for yourself, you can set a
+password, and only this password will be accepted. To enable this,
+write the password to a file and tell uoamhub where the file is:
+
+ umask 077
+ echo topsecret /tmp/uoampasswd
+ uoamhub --password /tmp/uoampasswd
+
+
 Links
 -----
 

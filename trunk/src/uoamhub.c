@@ -52,6 +52,7 @@ static int should_exit = 0;
 
 struct config {
     struct addrinfo *bind_address;
+    char *password;
     int no_daemon;
     const char *pidfile, *logger, *chroot_dir;
     uid_t uid;
@@ -94,6 +95,7 @@ struct domain {
 };
 
 struct host {
+    const struct config *config;
     struct domain domains[MAX_DOMAINS];
     unsigned num_domains;
 };
@@ -208,6 +210,7 @@ static void usage(void) {
             " -v             increase verbosity (default 1)\n"
             " --quiet\n"
             " -q             reset verbosity to 0\n"
+            " --password file    single-domain, only accept the password from the file\n"
             " --port port\n"
             " -p port        listen on this port (default 2000)\n"
             " --logger program\n"
@@ -220,6 +223,44 @@ static void usage(void) {
             "\n"
             );
     exit(1);
+}
+
+static int read_file_string(const char *filename, char **value) {
+    FILE *file;
+    char line[1024], *p;
+    int save_errno;
+    size_t len;
+
+    assert(value != NULL);
+    assert(*value == NULL);
+
+    file = fopen(filename, "r");
+    if (file == NULL)
+        return -1;
+
+    p = fgets(line, sizeof(line), file);
+    save_errno = errno;
+    fclose(file);
+    if (p == NULL) {
+        errno = save_errno;
+        return -1;
+    }
+
+    while (*p > 0 && *p <= 0x20)
+        p++;
+
+    len = strlen(p);
+
+    while (p[len - 1] > 0 && p[len - 1] <= 0x20)
+        len--;
+
+    p[len] = 0;
+
+    *value = strdup(p);
+    if (*value == NULL)
+        return -1;
+
+    return 0;
 }
 
 static void read_config(struct config *config, int argc, char **argv) {
@@ -235,6 +276,7 @@ static void read_config(struct config *config, int argc, char **argv) {
         {"user", 1, 0, 'u'},
         {"logger", 1, 0, 'l'},
         {"pidfile", 1, 0, 'P'},
+        {"password", 1, 0, 'w'},
         {0,0,0,0}
     };
     unsigned port = 2000;
@@ -246,7 +288,7 @@ static void read_config(struct config *config, int argc, char **argv) {
     while (1) {
         int option_index = 0;
 
-        ret = getopt_long(argc, argv, "Vvqhp:r:u:Dl:",
+        ret = getopt_long(argc, argv, "Vvqhp:r:u:Dl:w:",
                           long_options, &option_index);
         if (ret == -1)
             break;
@@ -269,6 +311,20 @@ static void read_config(struct config *config, int argc, char **argv) {
                 fprintf(stderr, "invalid port specification\n");
                 exit(1);
             }
+            break;
+        case 'w':
+            if (config->password != NULL) {
+                free(config->password);
+                config->password = NULL;
+            }
+
+            ret = read_file_string(optarg, &config->password);
+            if (ret < 0) {
+                fprintf(stderr, "failed to read '%s': %s\n",
+                        optarg, strerror(errno));
+                exit(1);
+            }
+
             break;
         case 'D':
             config->no_daemon = 1;
@@ -852,6 +908,14 @@ static int login(struct client *client, const char *password) {
 
     domain = get_domain(client->domain->host, password);
     if (domain == NULL) {
+        if (client->domain->host->config->password != NULL &&
+            strcmp(password, client->domain->host->config->password) != 0) {
+            fprintf(stderr, "wrong password, rejecting client %u\n",
+                    client->id);
+            client->should_destroy = 1;
+            return 0;
+        }
+
         domain = create_domain(client->domain->host, password);
         if (domain == NULL) {
             fprintf(stderr, "domain creation failed, rejecting client %u\n",
@@ -1083,6 +1147,7 @@ int main(int argc, char **argv) {
 
     /* create domain 0 */
     memset(&host, 0, sizeof(host));
+    host.config = &config;
     host.num_domains = 1;
     host.domains[0].host = &host;
 
