@@ -30,6 +30,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/select.h>
+#include <sys/stat.h>
 #include <netdb.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -238,6 +239,7 @@ static void read_config(struct config *config, int argc, char **argv) {
     };
     unsigned port = 2000;
     struct passwd *pw;
+    struct stat st;
 
     memset(config, 0, sizeof(*config));
 
@@ -278,8 +280,19 @@ static void read_config(struct config *config, int argc, char **argv) {
             config->logger = optarg;
             break;
         case 'r':
-            config->chroot_dir = *optarg == 0
-                ? NULL : optarg;
+            ret = stat(optarg, &st);
+            if (ret < 0) {
+                fprintf(stderr, "failed to stat '%s': %s\n",
+                        optarg, strerror(errno));
+                exit(1);
+            }
+            if (!S_ISDIR(st.st_mode)) {
+                fprintf(stderr, "not a directory: '%s'\n",
+                        optarg);
+                exit(1);
+            }
+
+            config->chroot_dir = optarg;
             break;
         case 'u':
             pw = getpwnam(optarg);
@@ -302,6 +315,11 @@ static void read_config(struct config *config, int argc, char **argv) {
     if (optind < argc) {
         fprintf(stderr, "unrecognized argument: %s\n", argv[optind]);
         usage();
+    }
+
+    if (geteuid() == 0 && config->uid == 0) {
+        fprintf(stderr, "running uoamhub as root is a Bad Thing(TM), please use --user\n");
+        exit(1);
     }
 
     memset(&hints, 0, sizeof(hints));
@@ -357,7 +375,7 @@ static void setup(struct config *config, int *sockfdp) {
     if (!config->no_daemon && getppid() != 1) {
         pid_t pid = fork();
         if (pid < 0) {
-            fprintf(stderr, "fork failed: %s", strerror(errno));
+            fprintf(stderr, "fork failed: %s\n", strerror(errno));
             exit(1);
         }
 
@@ -400,13 +418,13 @@ static void setup(struct config *config, int *sockfdp) {
 
         ret = pipe(fds);
         if (ret < 0) {
-            fprintf(stderr, "pipe failed: %s", strerror(errno));
+            fprintf(stderr, "pipe failed: %s\n", strerror(errno));
             exit(1);
         }
 
         logger_pid = fork();
         if (logger_pid < 0) {
-            fprintf(stderr, "fork failed: %s", strerror(errno));
+            fprintf(stderr, "fork failed: %s\n", strerror(errno));
             exit(1);
         } else if (logger_pid == 0) {
             if (fds[0] != 0) {
@@ -439,9 +457,8 @@ static void setup(struct config *config, int *sockfdp) {
     if (config->chroot_dir != NULL) {
         ret = chroot(config->chroot_dir);
         if (ret < 0) {
-            fprintf(stderr, "chroot '%s' failed: %s",
+            fprintf(stderr, "chroot '%s' failed: %s\n",
                     config->chroot_dir, strerror(errno));
-            getchar();
             exit(1);
         }
 
@@ -452,21 +469,24 @@ static void setup(struct config *config, int *sockfdp) {
     if (config->uid > 0) {
         ret = setgroups(0, NULL);
         if (ret < 0) {
-            fprintf(stderr, "setgroups failed: %s", strerror(errno));
+            fprintf(stderr, "setgroups failed: %s\n", strerror(errno));
             exit(1);
         }
 
         ret = setregid(config->gid, config->gid);
         if (ret < 0) {
-            fprintf(stderr, "setgid failed: %s", strerror(errno));
+            fprintf(stderr, "setgid failed: %s\n", strerror(errno));
             exit(1);
         }
 
         ret = setreuid(config->uid, config->uid);
         if (ret < 0) {
-            fprintf(stderr, "setuid failed: %s", strerror(errno));
+            fprintf(stderr, "setuid failed: %s\n", strerror(errno));
             exit(1);
         }
+    } else if (getuid() == 0) {
+        /* drop a real_uid root */
+        setuid(geteuid());
     }
 
     /* signals */
