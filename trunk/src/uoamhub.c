@@ -42,6 +42,7 @@
 #include <getopt.h>
 #include <pwd.h>
 #include <grp.h>
+#include <time.h>
 
 #define MAX_DOMAINS 64
 #define MAX_CLIENTS 256
@@ -83,6 +84,7 @@ struct client {
     unsigned id;
     int sockets[16];
     unsigned num_sockets;
+    time_t timeout;
     struct domain *domain;
     int should_destroy:1, handshake:1, authorized:1, have_position:1,
         chat_enabled:1;
@@ -697,6 +699,7 @@ static struct client *create_client(struct domain *domain, int sockfd, unsigned 
     client->id = id;
     client->sockets[0] = sockfd;
     client->num_sockets = 1;
+    client->timeout = time(NULL) + 60;
 
     ret = add_client(domain, client);
     if (!ret) {
@@ -992,6 +995,9 @@ static void respond(struct client *client, unsigned socket_index,
 
     /* send it */
     send(client->sockets[socket_index], response, response_length, 0);
+
+    /* update timeout */
+    client->timeout = time(NULL) + 60;
 }
 
 static void process_position_update(struct client *client,
@@ -1375,6 +1381,7 @@ int main(int argc, char **argv) {
     do {
         fd_set rfds;
         int max_fd;
+        time_t now = time(NULL);
 
         /* select() on all sockets */
         FD_ZERO(&rfds);
@@ -1398,6 +1405,13 @@ int main(int argc, char **argv) {
                 assert(client->domain == domain);
 
                 if (client->should_destroy || client->num_sockets == 0) {
+                    kill_client(client);
+                    continue;
+                }
+
+                if (now > client->timeout) {
+                    if (verbose >= 1)
+                        printf("timeout on client %u\n", client->id);
                     kill_client(client);
                     continue;
                 }
