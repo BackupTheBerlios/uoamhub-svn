@@ -380,7 +380,7 @@ int main(int argc, char **argv) {
     struct addrinfo hints, *bind_address;
     int ret, sockfd, max_fd;
     struct domain domains[MAX_DOMAINS];
-    unsigned num_domains = 1, z, w, next_client_id = 1;
+    unsigned num_domains = 1, z, next_client_id = 1;
     struct sigaction sa;
     fd_set rfds;
 
@@ -442,6 +442,8 @@ int main(int argc, char **argv) {
         FD_SET(sockfd, &rfds);
         max_fd = sockfd;
         for (z = 0; z < num_domains; z++) {
+            unsigned w;
+
             for (w = 0; w < domains[z].num_clients; w++) {
                 FD_SET(domains[z].clients[w].sockfd, &rfds);
                 if (domains[z].clients[w].sockfd > max_fd)
@@ -483,8 +485,9 @@ int main(int argc, char **argv) {
 
             for (z = 0; z < num_domains; z++) {
                 struct client *client = domains[z].clients;
+                int w;
 
-                for (w = 0; w < domains[z].num_clients; w++, client++) {
+                for (w = 0; w < (int)domains[z].num_clients; w++, client++) {
                     if (FD_ISSET(client->sockfd, &rfds)) {
                         unsigned char buffer[4096];
                         ssize_t nbytes;
@@ -572,6 +575,7 @@ int main(int argc, char **argv) {
 
     for (z = 0; z < num_domains; z++) {
         struct client *client = domains[z].clients;
+        unsigned w;
 
         for (w = 0; w < domains[z].num_clients; w++, client++) {
             close(client->sockfd);
