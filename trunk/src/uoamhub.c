@@ -78,12 +78,11 @@ struct chat {
 
 struct client {
     struct client *prev, *next;
-    unsigned id;
+    unsigned id, master_id;
     int sockfd;
     struct domain *domain;
     int should_destroy:1, handshake:1, authorized:1, have_position:1,
         chat_enabled:1;
-    struct client *master;
     struct player_info info;
     struct chat *chats[MAX_CHATS];
     unsigned num_chats;
@@ -951,10 +950,9 @@ static void respond(struct client *client, unsigned sequence,
         write_uint32(response + 16, (uint32_t)(response_length - 24));
 
     if (response[2] == 0x0c || response[2] == 0x0f) {
-        unsigned client_id = client->master == NULL
-            ? client->id : client->master->id;
-
-        write_uint32(response + 20, (uint32_t)client_id);
+        unsigned master_id = client->master_id == 0
+            ? client->id : client->master_id;
+        write_uint32(response + 20, (uint32_t)master_id);
     }
 
     /* dump it */
@@ -1003,7 +1001,7 @@ static void handle_query_list(struct client *client, unsigned sequence) {
 
         do {
             if (client2->info.noip.name[0] == 0 ||
-                client2->master != NULL) {
+                client2->master_id != 0) {
                 client2 = client2->next;
                 continue;
             }
@@ -1114,8 +1112,6 @@ static void handle_packet(struct client *client,
     sequence = read_uint32(data + 12);
 
     if (data[2] == 0x0b) {
-        unsigned master_id;
-
         if (!client->handshake) {
             if (length < 24) {
                 /* too short */
@@ -1123,16 +1119,19 @@ static void handle_packet(struct client *client,
                 return;
             }
 
-            master_id = read_uint32(data + 20);
-            if (master_id != 0) {
-                client->master = get_client(client->domain->host, master_id);
-                if (client->master == NULL) {
+            client->master_id = read_uint32(data + 20);
+            if (client->master_id != 0) {
+                struct client *master;
+
+                master = get_client(client->domain->host, client->master_id);
+                if (master == NULL) {
                     if (verbose >= 1)
                         fprintf(stderr, "invalid master id in handshake, killing client %u\n",
                                 client->id);
                     client->should_destroy = 1;
                     return;
                 }
+
             }
         }
 
