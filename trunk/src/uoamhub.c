@@ -1292,8 +1292,9 @@ static void client_data_available(struct client *client, unsigned socket_index) 
     /* read from stream */
     nbytes = recv(client->sockets[socket_index], buffer, sizeof(buffer), 0);
     if (nbytes <= 0) {
-        printf("client %u disconnected\n", client->id);
-        client->should_destroy = 1;
+        printf("client %u[%u] disconnected\n", client->id, socket_index);
+        close(client->sockets[socket_index]);
+        client->sockets[socket_index] = -1;
         return;
     }
 
@@ -1395,7 +1396,7 @@ int main(int argc, char **argv) {
             struct client *client, *next_client = domain->clients_head;
 
             while (next_client != NULL) {
-                unsigned z;
+                int z;
 
                 client = next_client;
                 next_client = client->next;
@@ -1416,10 +1417,16 @@ int main(int argc, char **argv) {
                     continue;
                 }
 
-                for (z = 0; z < client->num_sockets; z++) {
-                    FD_SET(client->sockets[z], &rfds);
-                    if (client->sockets[z] > max_fd)
-                        max_fd = client->sockets[z];
+                for (z = client->num_sockets - 1; z >= 0; z--) {
+                    if (client->sockets[z] < 0) {
+                        if (z < (int)client->num_sockets - 1)
+                            client->sockets[z] = client->sockets[client->num_sockets - 1];
+                        client->num_sockets--;
+                    } else {
+                        FD_SET(client->sockets[z], &rfds);
+                        if (client->sockets[z] > max_fd)
+                            max_fd = client->sockets[z];
+                    }
                 }
             }
 
