@@ -599,7 +599,7 @@ int main(int argc, char **argv) {
         ret = select(max_fd + 1, &rfds, NULL, NULL, NULL);
         if (ret < 0 && errno != EINTR) {
             fprintf(stderr, "select failed: %s\n", strerror(errno));
-            exit(1);
+            break;
         }
 
         if (ret == 0) {
@@ -613,12 +613,11 @@ int main(int argc, char **argv) {
             socklen_t addrlen = sizeof(addr);
 
             ret = accept(sockfd, &addr, &addrlen);
-            if (ret < 0) {
+            if (ret >= 0) {
+                create_client(&domains[0], ret, next_client_id++);
+            } else {
                 fprintf(stderr, "accept failed: %s\n", strerror(errno));
-                exit(1);
             }
-
-            create_client(&domains[0], ret, next_client_id++);
         }
 
         for (z = 0; z < num_domains; z++) {
