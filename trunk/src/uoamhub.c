@@ -319,9 +319,35 @@ static void free_config(struct config *config) {
     memset(config, 0, sizeof(*config));
 }
 
-static void setup(struct config *config) {
-    int ret;
+static void setup(struct config *config, int *sockfdp) {
+    int ret, sockfd;
     pid_t logger_pid = -1;
+    struct sigaction sa;
+
+    /* server socket stuff */
+    sockfd = socket(PF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        fprintf(stderr, "failed to create socket: %s\n",
+                strerror(errno));
+        exit(1);
+    }
+
+    ret = bind(sockfd, config->bind_address->ai_addr,
+               config->bind_address->ai_addrlen);
+    if (ret < 0) {
+        fprintf(stderr, "failed to bind: %s\n",
+                strerror(errno));
+        exit(1);
+    }
+
+    ret = listen(sockfd, 4);
+    if (ret < 0) {
+        fprintf(stderr, "listen failed: %s\n",
+                strerror(errno));
+        exit(1);
+    }
+
+    *sockfdp = sockfd;
 
     /* daemonize */
     if (!config->no_daemon && getppid() != 1) {
@@ -372,7 +398,7 @@ static void setup(struct config *config) {
             close(fds[1]);
             close(1);
             close(2);
-            /* XXX: close sockfd */
+            close(sockfd);
 
             execl("/bin/sh", "sh", "-c", config->logger, NULL);
             exit(1);
@@ -423,6 +449,18 @@ static void setup(struct config *config) {
             exit(1);
         }
     }
+
+    /* signals */
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = exit_signal_handler;
+    sigaction(SIGHUP, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGQUIT, &sa, NULL);
+
+    sa.sa_handler = SIG_IGN;
+    sigaction(SIGUSR1, &sa, NULL);
+    sigaction(SIGUSR2, &sa, NULL);
 }
 
 static void free_client(struct client *client) {
@@ -997,54 +1035,17 @@ int main(int argc, char **argv) {
     int ret, sockfd;
     struct host host;
     unsigned z, next_client_id = 1;
-    struct sigaction sa;
     fd_set rfds;
 
     read_config(&config, argc, argv);
+
+    /* setup uid, sockets, chroot, logger etc. */
+    setup(&config, &sockfd);
 
     /* create domain 0 */
     memset(&host, 0, sizeof(host));
     host.num_domains = 1;
     host.domains[0].host = &host;
-
-    /* server socket stuff */
-    sockfd = socket(PF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) {
-        fprintf(stderr, "failed to create socket: %s\n",
-                strerror(errno));
-        exit(1);
-    }
-
-    ret = bind(sockfd, config.bind_address->ai_addr,
-               config.bind_address->ai_addrlen);
-    if (ret < 0) {
-        fprintf(stderr, "failed to bind: %s\n",
-                strerror(errno));
-        exit(1);
-    }
-
-    ret = listen(sockfd, 4);
-    if (ret < 0) {
-        fprintf(stderr, "listen failed: %s\n",
-                strerror(errno));
-        exit(1);
-    }
-
-    /* setup uid, sockets, chroot, logger etc. */
-
-    setup(&config);
-
-    /* signals */
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = exit_signal_handler;
-    sigaction(SIGHUP, &sa, NULL);
-    sigaction(SIGTERM, &sa, NULL);
-    sigaction(SIGINT, &sa, NULL);
-    sigaction(SIGQUIT, &sa, NULL);
-
-    sa.sa_handler = SIG_IGN;
-    sigaction(SIGUSR1, &sa, NULL);
-    sigaction(SIGUSR2, &sa, NULL);
 
     /* main loop */
     do {
