@@ -52,19 +52,38 @@
 #define log(level, ...) do { if (verbose >= (level)) printf(__VA_ARGS__); } while (0)
 #endif
 
+/** source for client ids (which are important for security). if you
+    have a hardware random device, change this */
 #define RANDOM_DEVICE "/dev/urandom"
 
+/*
+  feel free to tune:
+*/
+
+/** maximum number of domains */
 #define MAX_DOMAINS 64
+
+/** maximum number of clients per domain */
 #define MAX_CLIENTS 256
+
+/** maximum number of connections per client */
 #define MAX_SOCKETS 16
+
+/** length of the chat queue per client */
 #define MAX_CHATS 64
 
+/** version number of this software */
 static const char VERSION[] = "0.1.0";
+
 #ifndef DISABLE_LOGGING
+/** verbosity - increasing this will trash the screen */
 static int verbose = 1;
 #endif
-static int should_exit = 0;
 
+/** set by the signal handler to tell the main loop to exit */
+static volatile int should_exit = 0;
+
+/** global host configuration */
 struct config {
     unsigned port;
     struct addrinfo *bind_address;
@@ -83,16 +102,21 @@ struct noip_player_info {
     unsigned char position[16];
 };
 
+/** this structure is sent by the client in position update packets */
 struct player_info {
+    /** the internal client's IP address, not affected by NAT */
     unsigned char ip[4];
+    /** public client info */
     struct noip_player_info noip;
 };
 
+/** an item in the chat queue */
 struct chat {
     size_t size;
     char data[1];
 };
 
+/** a client, which may consist of more than one socket */
 struct client {
     /** doubly linked list */
     struct client *prev, *next;
@@ -130,17 +154,29 @@ struct client {
     unsigned num_chats;
 };
 
+/** a domain - all clients who chose the same password are in the same
+    domain and can see each others */
 struct domain {
+    /** doubly linked list */
     struct domain *prev, *next;
+    /** password of this domain */
     char password[20];
+    /** the host this domain belongs to */
     struct host *host;
+    /** pointer to the first client */
     struct client *clients_head;
+    /** number of clients */
     unsigned num_clients;
 };
 
+/** a host - currently only one host is supported, so this is a
+    singleton */
 struct host {
+    /** configuration of this host */
     const struct config *config;
+    /** pointer to the first domain */
     struct domain *domains_head;
+    /** number of domains */
     unsigned num_domains;
 };
 
@@ -151,6 +187,13 @@ struct packet_header {
     uint32_t length, counter;
 };
 
+/*
+  Some templates for packets are following. I havn't decoded some of
+  them yet, but that doesn't matter as long as the client understands
+  us.
+*/
+
+/** response to the first packet in a TCP connection */
 static unsigned char packet_handshake_response[] = {
     0x05, 0x00, 0x0c, 0x03, 0x10, 0x00, 0x00, 0x00,
     0x3c, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
@@ -162,6 +205,7 @@ static unsigned char packet_handshake_response[] = {
     0x02, 0x00, 0x00, 0x00,
 };
 
+/** server acknowledges information sent by the client */
 static unsigned char packet_ack[] = {
     0x05, 0x00, 0x02, 0x03, 0x10, 0x00, 0x00, 0x00,
     0x1c, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
@@ -169,7 +213,8 @@ static unsigned char packet_ack[] = {
     0x00, 0x00, 0x00, 0x00,
 };
 
-static unsigned char packet_ack2[] = {
+/** response to a chat poll: no chat item in the client's queue */
+static unsigned char packet_no_chat[] = {
     0x05, 0x00, 0x02, 0x03, 0x10, 0x00, 0x00, 0x00,
     0x2c, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
     0x14, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
@@ -178,13 +223,17 @@ static unsigned char packet_ack2[] = {
     0x00, 0x00, 0x00, 0x00,
 };
 
-static unsigned char packet_chat[] = {
+/** packet header of a chat poll response - a chat packet is appended
+    (either chat text or chat font) */
+static const unsigned char header_chat[] = {
     0x05, 0x00, 0x02, 0x03, 0x10, 0x00, 0x00, 0x00,
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x00, 0x00,
 };
 
-static unsigned char packet_poll[] = {
+/** packet header of a list response - a list of players with their
+    position is appended */
+static const unsigned char header_list[] = {
     0x05, 0x00, 0x02, 0x03, 0x10, 0x00, 0x00, 0x00,
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
@@ -192,6 +241,7 @@ static unsigned char packet_poll[] = {
     0xff, 0xff, 0xff, 0xff,
 };
 
+/** response to a 0x0e packet. no idea what this means */
 static unsigned char packet_response2[] = {
     0x05, 0x00, 0x0f, 0x03, 0x10, 0x00, 0x00, 0x00,
     0x38, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
@@ -1153,8 +1203,8 @@ static void handle_query_list(struct client *client, unsigned socket_index,
     size_t pos;
     unsigned num = 0;
 
-    memcpy(buffer, packet_poll, sizeof(packet_poll));
-    pos = sizeof(packet_poll);
+    memcpy(buffer, header_list, sizeof(header_list));
+    pos = sizeof(header_list);
 
     if (domain->clients_head != NULL) {
         struct client *client2 = domain->clients_head;
@@ -1184,6 +1234,7 @@ static void handle_query_list(struct client *client, unsigned socket_index,
     respond(client, socket_index, sequence, buffer, pos);
 }
 
+/** send font info of all clients in this domain to the new client */
 static void resend_fonts(struct client *client) {
     struct domain *domain = client->domain;
     struct client *p = domain->clients_head;
@@ -1199,6 +1250,8 @@ static void resend_fonts(struct client *client) {
     } while (p != domain->clients_head);
 }
 
+/** checks the password and tries to log the client in; creates a new
+    domain if required */
 static int login(struct client *client, const char *password) {
     struct domain *domain;
     int ret;
@@ -1253,8 +1306,8 @@ static void handle_poll(struct client *client, unsigned socket_index,
         size_t pos;
 
         /* build the packet */
-        memcpy(buffer, packet_chat, sizeof(packet_chat));
-        pos = sizeof(packet_chat);
+        memcpy(buffer, header_chat, sizeof(header_chat));
+        pos = sizeof(header_chat);
 
         memcpy(buffer + pos, client->chats[0]->data,
                client->chats[0]->size);
@@ -1275,8 +1328,8 @@ static void handle_poll(struct client *client, unsigned socket_index,
     } else {
         /* nothing in the queue */
         respond(client, socket_index, sequence,
-                packet_ack2,
-                sizeof(packet_ack2));
+                packet_no_chat,
+                sizeof(packet_no_chat));
     }
 }
 
