@@ -83,6 +83,7 @@ struct client {
     struct domain *domain;
     int should_destroy:1, handshake:1, authorized:1, have_position:1,
         chat_enabled:1;
+    struct client *master;
     struct player_info info;
     struct chat *chats[MAX_CHATS];
     unsigned num_chats;
@@ -112,7 +113,7 @@ struct packet_header {
 static unsigned char packet_handshake_response[] = {
     0x05, 0x00, 0x0c, 0x03, 0x10, 0x00, 0x00, 0x00,
     0x3c, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
-    0xd0, 0x16, 0xd0, 0x16, 0x94, 0x96, 0x8f, 0x0a,
+    0xd0, 0x16, 0xd0, 0x16, 0xff, 0xff, 0xff, 0xff,
     0x05, 0x00, 0x32, 0x30, 0x30, 0x30, 0x00, 0x00,
     0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x04, 0x5d, 0x88, 0x8a, 0xeb, 0x1c, 0xc9, 0x11,
@@ -153,7 +154,7 @@ static unsigned char packet_poll[] = {
 static unsigned char packet_response2[] = {
     0x05, 0x00, 0x0f, 0x03, 0x10, 0x00, 0x00, 0x00,
     0x38, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
-    0xd0, 0x16, 0xd0, 0x16, 0x94, 0x96, 0x8f, 0x0a,
+    0xd0, 0x16, 0xd0, 0x16, 0xff, 0xff, 0xff, 0xff,
     0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x04, 0x5d, 0x88, 0x8a,
     0xeb, 0x1c, 0xc9, 0x11, 0x9f, 0xe8, 0x08, 0x00,
@@ -715,6 +716,36 @@ static void kill_client(struct client *client) {
     free_client(client);
 }
 
+/** find a client with the specified id on the whole host (all
+    domains) */
+static struct client *get_client(struct host *host, unsigned id) {
+    struct domain *domain = host->domains_head;
+
+    if (domain == NULL)
+        return NULL;
+
+    do {
+        struct client *client = domain->clients_head;
+
+        assert(domain->host == host);
+
+        if (client != NULL) {
+            do {
+                assert(client->domain == domain);
+
+                if (client->id == id)
+                    return client;
+
+                client = client->next;
+            } while (client != domain->clients_head);
+        }
+
+        domain = domain->next;
+    } while (domain != host->domains_head);
+
+    return NULL;
+}
+
 static struct domain *get_domain(struct host *host, const char *password) {
     struct domain *domain = host->domains_head;
 
@@ -919,6 +950,13 @@ static void respond(struct client *client, unsigned sequence,
     if (response[2] == 0x02)
         write_uint32(response + 16, (uint32_t)(response_length - 24));
 
+    if (response[2] == 0x0c || response[2] == 0x0f) {
+        unsigned client_id = client->master == NULL
+            ? client->id : client->master->id;
+
+        write_uint32(response + 20, (uint32_t)client_id);
+    }
+
     /* dump it */
     if (verbose >= 4) {
         printf("sending to client %u\n", client->id);
@@ -964,7 +1002,8 @@ static void handle_query_list(struct client *client, unsigned sequence) {
         const size_t max_pos = sizeof(buffer) - sizeof(client->info.noip) - 4;
 
         do {
-            if (client2->info.noip.name[0] == 0) {
+            if (client2->info.noip.name[0] == 0 ||
+                client2->master != NULL) {
                 client2 = client2->next;
                 continue;
             }
@@ -1074,14 +1113,46 @@ static void handle_packet(struct client *client,
 
     sequence = read_uint32(data + 12);
 
-    switch (data[2]) {
-    case 0x0b:
+    if (data[2] == 0x0b) {
+        unsigned master_id;
+
+        if (!client->handshake) {
+            if (length < 24) {
+                /* too short */
+                client->should_destroy = 1;
+                return;
+            }
+
+            master_id = read_uint32(data + 20);
+            if (master_id != 0) {
+                client->master = get_client(client->domain->host, master_id);
+                if (client->master == NULL) {
+                    if (verbose >= 1)
+                        fprintf(stderr, "invalid master id in handshake, killing client %u\n",
+                                client->id);
+                    client->should_destroy = 1;
+                    return;
+                }
+            }
+        }
+
         client->handshake = 1;
         respond(client, sequence,
                 packet_handshake_response,
                 sizeof(packet_handshake_response));
-        break;
+        return;
+    }
 
+    if (!client->handshake) {
+        /* handshake omitted, kill this client */
+        if (verbose >= 1)
+            fprintf(stderr, "handshake omitted, killing client %u\n",
+                    client->id);
+        client->should_destroy = 1;
+        return;
+    }
+
+    switch (data[2]) {
     case 0x00:
         if (!client->authorized) {
             int ret;
