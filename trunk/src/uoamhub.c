@@ -71,13 +71,15 @@ struct client {
     unsigned id;
     int sockfd;
     struct domain *domain;
-    int should_destroy:1, handshake:1, have_position:1;
+    int should_destroy:1, handshake:1, authorized:1, have_position:1;
     struct player_info info;
     struct chat *chats[MAX_CHATS];
     unsigned num_chats;
 };
 
 struct domain {
+    char password[20];
+    struct host *host;
     struct client clients[MAX_CLIENTS];
     unsigned num_clients;
 };
@@ -264,24 +266,60 @@ static void free_config(struct config *config) {
     memset(config, 0, sizeof(*config));
 }
 
-static void create_client(struct domain *domain, int sockfd, unsigned id) {
-    struct client *client = &domain->clients[domain->num_clients];
+static unsigned client_index(struct client *client) {
+    assert(client != NULL);
+    assert(client->domain != NULL);
+    assert(client->domain->num_clients > 0);
+    assert(client >= client->domain->clients);
+    assert(client < client->domain->clients + client->domain->num_clients);
 
-    if (domain->num_clients >= MAX_CLIENTS) {
-        fprintf(stderr, "domain 0 is full, rejecting new client %u\n", id);
-        close(sockfd);
-        return;
-    }
+    return (client - client->domain->clients) / sizeof(*client);
+}
 
-    domain->num_clients++;
+static struct client *add_client(struct domain *domain, const struct client *old) {
+    struct client *client;
 
-    memset(client, 0, sizeof(*client));
-    client->id = id;
-    client->sockfd = sockfd;
+    if (domain->num_clients >= MAX_CLIENTS)
+        return NULL;
+
+    client = &domain->clients[domain->num_clients++];
+    memcpy(client, old, sizeof(*client));
+
     client->domain = domain;
 
+    return client;
+}
+
+static void remove_client(struct domain *domain, unsigned n) {
+    assert(domain != NULL);
+    assert(domain->num_clients > 0);
+    assert(n < domain->num_clients);
+
+    domain->num_clients--;
+
+    if (n < domain->num_clients)
+        memmove(domain->clients + n, domain->clients + n + 1,
+                (domain->num_clients - n) * sizeof(*domain->clients));
+}
+
+static struct client *create_client(struct domain *domain, int sockfd, unsigned id) {
+    struct client client, *ret;
+
+    memset(&client, 0, sizeof(client));
+    client.id = id;
+    client.sockfd = sockfd;
+
+    ret = add_client(domain, &client);
+    if (ret == NULL) {
+        fprintf(stderr, "domain 0 is full, rejecting new client %u\n", id);
+        close(sockfd);
+        return NULL;
+    }
+
     if (verbose >= 1)
-        printf("new client: %u\n", client->id);
+        printf("new client: %u\n", ret->id);
+
+    return ret;
 }
 
 static void kill_client(struct domain *domain, unsigned n) {
@@ -303,11 +341,50 @@ static void kill_client(struct domain *domain, unsigned n) {
         free(client->chats[z]);
     }
 
-    domain->num_clients--;
+    remove_client(domain, n);
+}
 
-    if (n < domain->num_clients)
-        memmove(domain->clients + n, domain->clients + n + 1,
-                (domain->num_clients - n) * sizeof(*domain->clients));
+static struct domain *get_domain(struct host *host, const char *password) {
+    unsigned char z;
+
+    for (z = 0; z < host->num_domains; z++) {
+        if (strcmp(password, host->domains[z].password) == 0)
+            return &host->domains[z];
+    }
+
+    return NULL;
+}
+
+static struct domain *create_domain(struct host *host, const char *password) {
+    size_t password_len;
+    struct domain *domain;
+
+    password_len = strlen(password);
+    if (password_len == 0) {
+        fprintf(stderr, "no password\n");
+        return NULL;
+    }
+
+    if (password_len >= sizeof(domain->password)) {
+        fprintf(stderr, "password too long\n");
+        return NULL;
+    }
+
+    if (host->num_domains >= MAX_DOMAINS) {
+        fprintf(stderr, "domain table is full\n");
+        return NULL;
+    }
+
+    domain = &host->domains[host->num_domains++];
+    memset(domain, 0, sizeof(domain));
+
+    memcpy(domain->password, password, password_len);
+    domain->host = host;
+
+    if (verbose >= 2)
+        printf("created domain '%s'\n", password);
+
+    return domain;
 }
 
 static void kill_domain(struct host *host, unsigned n) {
@@ -321,6 +398,26 @@ static void kill_domain(struct host *host, unsigned n) {
     if (n < host->num_domains)
         memmove(host->domains + n, host->domains + n + 1,
                 (host->num_domains - n) * sizeof(*host->domains));
+}
+
+static struct client *move_client(struct client *client, struct domain *domain) {
+    struct client *new_client;
+
+    assert(client != NULL);
+    assert(client->domain != NULL);
+    assert(domain != NULL);
+    assert(client->domain->host == domain->host);
+
+    if (client->domain == domain)
+        return client;
+
+    new_client = add_client(domain, client);
+    if (new_client == NULL)
+        return NULL;
+
+    remove_client(client->domain, client_index(client));
+
+    return new_client;
 }
 
 static void enqueue_client_chat(struct client *client,
@@ -474,6 +571,43 @@ static void handle_query_list(struct client *client, unsigned sequence) {
     respond(client, sequence, buffer, pos);
 }
 
+static struct client *login(struct client *client, const char *password) {
+    struct domain *domain;
+    struct client *new_client;
+
+    if (password[0] == 0) {
+        fprintf(stderr, "empty password from client %u, rejecting\n",
+                client->id);
+        client->should_destroy = 1;
+        return NULL;
+    }
+
+    domain = get_domain(client->domain->host, password);
+    if (domain == NULL) {
+        domain = create_domain(client->domain->host, password);
+        if (domain == NULL) {
+            fprintf(stderr, "domain creation failed, rejecting client %u\n",
+                    client->id);
+            client->should_destroy = 1;
+            return NULL;
+        }
+    }
+
+    new_client = move_client(client, domain);
+    if (new_client == NULL) {
+        client->should_destroy = 1;
+        return NULL;
+    }
+
+    new_client->authorized = 1;
+
+    if (verbose >= 1)
+        printf("client %u logged into domain '%s'\n",
+               new_client->id, domain->password);
+
+    return new_client;
+}
+
 static void handle_poll(struct client *client, unsigned sequence) {
     if (client->num_chats > 0) {
         /* send the first chat entry */
@@ -523,6 +657,23 @@ static void handle_packet(struct client *client,
         break;
 
     case 0x00:
+        if (!client->authorized) {
+            struct client *new_client;
+
+            if (memchr(data + 24, 0, 20) == NULL) {
+                fprintf(stderr, "malformed password field from, killing client %u\n",
+                        client->id);
+                client->should_destroy = 1;
+                return;
+            }
+
+            new_client = login(client, (const char*)(data + 24));
+            if (new_client == NULL)
+                return;
+
+            client = new_client;
+        }
+
         if (data[22] == 0x02) {
             /* 00 00 02 00: client polls */
 
@@ -598,7 +749,7 @@ static void client_data_available(struct client *client) {
         printf("\n");
     }
 
-    while (nbytes > 0) {
+    while (nbytes > 0 && !client->should_destroy) {
         if (nbytes < 16) {
             /* we need 16 bytes for a header */
             fprintf(stderr, "packet from client %u is too small (%lu bytes)\n",
@@ -663,6 +814,7 @@ int main(int argc, char **argv) {
     /* create domain 0 */
     memset(&host, 0, sizeof(host));
     host.num_domains = 1;
+    host.domains[0].host = &host;
 
     /* server socket stuff */
     sockfd = socket(PF_INET, SOCK_STREAM, 0);
