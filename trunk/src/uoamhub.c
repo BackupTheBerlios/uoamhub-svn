@@ -1439,10 +1439,6 @@ static void handle_packet(struct client *client, unsigned socket_index,
            after a reconnect, the clients sends shorter packets */
         if (length == 0x8c)
             process_position_update(client, data, length);
-
-        respond(client, socket_index, sequence,
-                packet_ack,
-                sizeof(packet_ack));
     }
 
     /* handle login */
@@ -1497,6 +1493,16 @@ static void handle_packet(struct client *client, unsigned socket_index,
                 memcpy(client->font_buffer, data + 52, client->font_buffer_size);
             }
         }
+
+        respond(client, socket_index, sequence,
+                packet_ack,
+                sizeof(packet_ack));
+    } else {
+        /* 00 00 10 00 or 00 00 00 00: client sends position update */
+
+        /* the contents of the request are already handled above, but
+           we send the ACK response here, because the login may have
+           failed meanwhile */
 
         respond(client, socket_index, sequence,
                 packet_ack,
