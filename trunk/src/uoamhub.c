@@ -61,10 +61,12 @@ struct config {
     unsigned port;
     struct addrinfo *bind_address;
     char *password;
+#ifndef DISABLE_DAEMON_CODE
     int no_daemon;
     const char *pidfile, *logger, *chroot_dir;
     uid_t uid;
     gid_t gid;
+#endif /* DISABLE_DAEMON_CODE */
 };
 
 struct noip_player_info {
@@ -328,8 +330,10 @@ static void read_config(struct config *config, int argc, char **argv) {
         {"password", 1, 0, 'w'},
         {0,0,0,0}
     };
+#ifndef DISABLE_DAEMON_CODE
     struct passwd *pw;
     struct stat st;
+#endif
 
     memset(config, 0, sizeof(*config));
     config->port = 2000;
@@ -375,6 +379,7 @@ static void read_config(struct config *config, int argc, char **argv) {
             }
 
             break;
+#ifndef DISABLE_DAEMON_CODE
         case 'D':
             config->no_daemon = 1;
             break;
@@ -412,6 +417,7 @@ static void read_config(struct config *config, int argc, char **argv) {
             config->uid = pw->pw_uid;
             config->gid = pw->pw_gid;
             break;
+#endif /* DISABLE_DAEMON_CODE */
         default:
             exit(1);
         }
@@ -422,10 +428,12 @@ static void read_config(struct config *config, int argc, char **argv) {
         usage();
     }
 
+#ifndef DISABLE_DAEMON_CODE
     if (geteuid() == 0 && config->uid == 0) {
         fprintf(stderr, "running uoamhub as root is a Bad Thing(TM), please use --user\n");
         exit(1);
     }
+#endif /* DISABLE_DAEMON_CODE */
 
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = PF_INET;
@@ -452,8 +460,11 @@ static void free_config(struct config *config) {
 
 /** set up stuff, e.g. sockets, pipes, daemonize */
 static void setup(struct config *config, int *randomfdp, int *sockfdp) {
-    int ret, sockfd, parentfd = -1, loggerfd = -1;
+    int ret, sockfd;
+#ifndef DISABLE_DAEMON_CODE
+    int parentfd = -1, loggerfd = -1;
     pid_t logger_pid = -1;
+#endif
     struct sigaction sa;
 
     /* random device */
@@ -489,6 +500,7 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
 
     *sockfdp = sockfd;
 
+#ifndef DISABLE_DAEMON_CODE
     /* daemonize */
     if (!config->no_daemon && getppid() != 1) {
         int fds[2];
@@ -645,6 +657,7 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
         /* drop a real_uid root */
         setuid(geteuid());
     }
+#endif /* DISABLE_DAEMON_CODE */
 
     /* signals */
     memset(&sa, 0, sizeof(sa));
@@ -658,6 +671,7 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
     sigaction(SIGUSR1, &sa, NULL);
     sigaction(SIGUSR2, &sa, NULL);
 
+#ifndef DISABLE_DAEMON_CODE
     /* send parent process a signal */
     if (parentfd >= 0) {
         if (verbose >= 4)
@@ -672,6 +686,7 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
         dup2(loggerfd, 2);
         close(loggerfd);
     }
+#endif /* DISABLE_DAEMON_CODE */
 }
 
 /** free memory used by a client, including sockets and the client
