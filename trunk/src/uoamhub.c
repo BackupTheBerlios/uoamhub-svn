@@ -1217,16 +1217,13 @@ static void handle_query_list(struct client *client, unsigned socket_index,
         const size_t max_pos = sizeof(buffer) - sizeof(client->info.noip) - 4;
 
         do {
-            if (client2->info.noip.name[0] == 0 ||
+            if (client2->info.noip.name[0] != 0 &&
                 !client2->should_destroy) {
-                client2 = client2->next;
-                continue;
+                memcpy(buffer + pos, &client2->info.noip,
+                       sizeof(client2->info.noip));
+                num++;
+                pos += sizeof(client2->info.noip);
             }
-
-            memcpy(buffer + pos, &client2->info.noip,
-                   sizeof(client2->info.noip));
-            num++;
-            pos += sizeof(client2->info.noip);
 
             client2 = client2->next;
         } while (pos <= max_pos && client2 != domain->clients_head);
