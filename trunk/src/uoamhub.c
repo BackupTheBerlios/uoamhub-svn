@@ -35,6 +35,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <stdio.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
@@ -44,6 +45,8 @@
 #include <pwd.h>
 #include <grp.h>
 #include <time.h>
+
+#define RANDOM_DEVICE "/dev/urandom"
 
 #define MAX_DOMAINS 64
 #define MAX_CLIENTS 256
@@ -90,7 +93,7 @@ struct client {
     /** visible name */
     char name[64];
     /** client id */
-    unsigned id;
+    uint32_t id;
     /** list of all sockets (a client can use several sockets at
         once) */
     int sockets[MAX_SOCKETS];
@@ -442,10 +445,18 @@ static void free_config(struct config *config) {
     memset(config, 0, sizeof(*config));
 }
 
-static void setup(struct config *config, int *sockfdp) {
+static void setup(struct config *config, int *randomfdp, int *sockfdp) {
     int ret, sockfd, parentfd = -1, loggerfd = -1;
     pid_t logger_pid = -1;
     struct sigaction sa;
+
+    /* random device */
+    *randomfdp = open(RANDOM_DEVICE, O_RDONLY);
+    if (*randomfdp < 0) {
+        fprintf(stderr, "failed to open %s: %s\n",
+                RANDOM_DEVICE, strerror(errno));
+        exit(1);
+    }
 
     /* server socket stuff */
     sockfd = socket(PF_INET, SOCK_STREAM, 0);
@@ -744,9 +755,10 @@ static void update_client_name(struct client *client) {
 
 static struct client *create_client(struct domain *domain, int sockfd,
                                     struct sockaddr *addr, socklen_t addrlen,
-                                    unsigned id) {
+                                    int randomfd) {
     struct client *client;
     int ret;
+    ssize_t nbytes;
 
     client = calloc(1, sizeof(*client));
     if (client == NULL)
@@ -755,7 +767,14 @@ static struct client *create_client(struct domain *domain, int sockfd,
     if (addrlen > sizeof(client->address))
         addrlen = sizeof(client->address);
     memcpy(&client->address, addr, addrlen);
-    client->id = id;
+
+    nbytes = read(randomfd, &client->id, sizeof(client->id));
+    if (nbytes < (ssize_t)sizeof(client->id)) {
+        fprintf(stderr, "random number generation failed\n");
+        free(client);
+        return NULL;
+    }
+
     client->sockets[0] = sockfd;
     client->num_sockets = 1;
     client->timeout = time(NULL) + 60;
@@ -764,7 +783,8 @@ static struct client *create_client(struct domain *domain, int sockfd,
 
     ret = add_client(domain, client);
     if (!ret) {
-        fprintf(stderr, "domain 0 is full, rejecting new client %u\n", id);
+        fprintf(stderr, "domain 0 is full, rejecting new client %s\n",
+                client->name);
         free_client(client);
         return NULL;
     }
@@ -805,7 +825,7 @@ static void kill_client(struct client *client) {
 
 /** find a client with the specified id on the whole host (all
     domains) */
-static struct client *get_client(struct host *host, unsigned id) {
+static struct client *get_client(struct host *host, uint32_t id) {
     struct domain *domain = host->domains_head;
 
     if (domain == NULL)
@@ -1045,7 +1065,7 @@ static void respond(struct client *client, unsigned socket_index,
         write_uint32(response + 16, (uint32_t)(response_length - 24));
 
     if (response[2] == 0x0c || response[2] == 0x0f)
-        write_uint32(response + 20, (uint32_t)client->id);
+        write_uint32(response + 20, client->id);
 
     /* dump it */
     if (verbose >= 6) {
@@ -1212,7 +1232,7 @@ static void handle_packet(struct client *client, unsigned socket_index,
 
     if (data[2] == 0x0b) {
         if (!client->handshake) {
-            unsigned master_id;
+            uint32_t master_id;
 
             assert(client->num_sockets == 1);
 
@@ -1424,15 +1444,14 @@ static void client_data_available(struct client *client, unsigned socket_index) 
 
 int main(int argc, char **argv) {
     struct config config;
-    int ret, sockfd;
+    int ret, randomfd, sockfd;
     struct host host;
     struct domain *domain_zero, *domain;
-    unsigned next_client_id = 1;
 
     read_config(&config, argc, argv);
 
     /* setup uid, sockets, chroot, logger etc. */
-    setup(&config, &sockfd);
+    setup(&config, &randomfd, &sockfd);
 
     /* create domain 0 */
     memset(&host, 0, sizeof(host));
@@ -1529,7 +1548,7 @@ int main(int argc, char **argv) {
             ret = accept(sockfd, &addr, &addrlen);
             if (ret >= 0) {
                 create_client(domain_zero, ret, &addr, addrlen,
-                              next_client_id++);
+                              randomfd);
             } else {
                 fprintf(stderr, "accept failed: %s\n", strerror(errno));
             }
