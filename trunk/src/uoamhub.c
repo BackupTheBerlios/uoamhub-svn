@@ -38,6 +38,8 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <getopt.h>
+#include <pwd.h>
+#include <grp.h>
 
 #define MAX_DOMAINS 8
 #define MAX_CLIENTS 64
@@ -49,6 +51,11 @@ static int should_exit = 0;
 
 struct config {
     struct addrinfo *bind_address;
+    int no_daemon;
+    const char *logger;
+    const char *chroot_dir;
+    uid_t uid;
+    gid_t gid;
 };
 
 struct noip_player_info {
@@ -201,8 +208,15 @@ static void usage(void) {
             " -v             increase verbosity (default 1)\n"
             " --quiet\n"
             " -q             reset verbosity to 0\n"
-            " -p port\n"
-            " --port port    listen on this port (default 2000)\n"
+            " --port port\n"
+            " -p port        listen on this port (default 2000)\n"
+            " --logger program\n"
+            " -l program     specifies a logger program (executed by /bin/sh)\n"
+            " --chroot dir   chroot into this directory (requires root)\n"
+            " --user username\n"
+            " -u username    change user id (don't run uoamhub as root!)\n"
+            " -D             don't detach (daemonize)\n"
+            "\n"
             );
     exit(1);
 }
@@ -216,16 +230,20 @@ static void read_config(struct config *config, int argc, char **argv) {
         {"quiet", 0, 0, 'q'},
         {"help", 0, 0, 'h'},
         {"port", 1, 0, 'p'},
+        {"chroot", 1, 0, 'r'},
+        {"user", 1, 0, 'u'},
+        {"logger", 1, 0, 'l'},
         {0,0,0,0}
     };
     unsigned port = 2000;
+    struct passwd *pw;
 
     memset(config, 0, sizeof(*config));
 
     while (1) {
         int option_index = 0;
 
-        ret = getopt_long(argc, argv, "Vvqhp:",
+        ret = getopt_long(argc, argv, "Vvqhp:r:u:Dl:",
                           long_options, &option_index);
         if (ret == -1)
             break;
@@ -248,6 +266,29 @@ static void read_config(struct config *config, int argc, char **argv) {
                 fprintf(stderr, "invalid port specification\n");
                 exit(1);
             }
+            break;
+        case 'D':
+            config->no_daemon = 1;
+            break;
+        case 'l':
+            config->logger = optarg;
+            break;
+        case 'r':
+            config->chroot_dir = *optarg == 0
+                ? NULL : optarg;
+            break;
+        case 'u':
+            pw = getpwnam(optarg);
+            if (pw == NULL) {
+                fprintf(stderr, "user '%s' not found\n", optarg);
+                exit(1);
+            }
+            if (pw->pw_uid == 0) {
+                fprintf(stderr, "setuid root is not allowed\n");
+                exit(1);
+            }
+            config->uid = pw->pw_uid;
+            config->gid = pw->pw_gid;
             break;
         default:
             exit(1);
@@ -276,6 +317,112 @@ static void free_config(struct config *config) {
         freeaddrinfo(config->bind_address);
 
     memset(config, 0, sizeof(*config));
+}
+
+static void setup(struct config *config) {
+    int ret;
+    pid_t logger_pid = -1;
+
+    /* daemonize */
+    if (!config->no_daemon && getppid() != 1) {
+        pid_t pid = fork();
+        if (pid < 0) {
+            fprintf(stderr, "fork failed: %s", strerror(errno));
+            exit(1);
+        }
+
+        if (pid > 0)
+            exit(0);
+
+        setsid();
+
+        close(0);
+
+        signal(SIGTSTP, SIG_IGN);
+        signal(SIGTTOU, SIG_IGN);
+        signal(SIGTTIN, SIG_IGN);
+
+        if (verbose >= 3)
+            printf("daemonized as pid %d\n", getpid());
+    }
+
+    /* start logger process */
+    if (config->logger != NULL) {
+        int fds[2];
+
+        if (verbose >= 3)
+            printf("starting logger '%s'\n", config->logger);
+
+        ret = pipe(fds);
+        if (ret < 0) {
+            fprintf(stderr, "pipe failed: %s", strerror(errno));
+            exit(1);
+        }
+
+        logger_pid = fork();
+        if (logger_pid < 0) {
+            fprintf(stderr, "fork failed: %s", strerror(errno));
+            exit(1);
+        } else if (logger_pid == 0) {
+            if (fds[0] != 0) {
+                dup2(fds[0], 0);
+                close(fds[0]);
+            }
+
+            close(fds[1]);
+            close(1);
+            close(2);
+            /* XXX: close sockfd */
+
+            execl("/bin/sh", "sh", "-c", config->logger, NULL);
+            exit(1);
+        }
+
+        if (verbose >= 2)
+            printf("logger started as pid %d\n", logger_pid);
+
+        dup2(fds[1], 1);
+        dup2(fds[1], 2);
+        close(fds[0]);
+        close(fds[1]);
+
+        if (verbose >= 3)
+            printf("logger connected\n");
+    }
+
+    /* chroot */
+    if (config->chroot_dir != NULL) {
+        ret = chroot(config->chroot_dir);
+        if (ret < 0) {
+            fprintf(stderr, "chroot '%s' failed: %s",
+                    config->chroot_dir, strerror(errno));
+            getchar();
+            exit(1);
+        }
+
+        chdir("/");
+    }
+
+    /* setuid */
+    if (config->uid > 0) {
+        ret = setgroups(0, NULL);
+        if (ret < 0) {
+            fprintf(stderr, "setgroups failed: %s", strerror(errno));
+            exit(1);
+        }
+
+        ret = setregid(config->gid, config->gid);
+        if (ret < 0) {
+            fprintf(stderr, "setgid failed: %s", strerror(errno));
+            exit(1);
+        }
+
+        ret = setreuid(config->uid, config->uid);
+        if (ret < 0) {
+            fprintf(stderr, "setuid failed: %s", strerror(errno));
+            exit(1);
+        }
+    }
 }
 
 static void free_client(struct client *client) {
@@ -882,6 +1029,10 @@ int main(int argc, char **argv) {
                 strerror(errno));
         exit(1);
     }
+
+    /* setup uid, sockets, chroot, logger etc. */
+
+    setup(&config);
 
     /* signals */
     memset(&sa, 0, sizeof(sa));
