@@ -36,11 +36,12 @@ similar operating systems; maybe MacOS X, OpenBSD, NetBSD, AIX,
 Solaris, HP/UX, Windows/Cygwin and many others - but I havn't tested
 that. Please tell me whether it does.
 
-You need gcc and make. Go to the source directory and type:
+You need gcc and GNU make. Go to the source directory and type:
 
  make
 
-This will result in the binary named "uoamhub".
+(Or "gmake" if you are not on Linux). This will result in the binary
+named "uoamhub".
 
 
 Running
