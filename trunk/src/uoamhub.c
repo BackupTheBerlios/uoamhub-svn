@@ -1424,6 +1424,21 @@ static void handle_packet(struct client *client, unsigned socket_index,
         return;
     }
 
+    /* position update - handle this before login, so we have the nick
+       name available when the login is logged */
+    if (data[20] == 0x00 && data[22] != 0x02) {
+        /* 00 00 10 00 or 00 00 00 00 */
+
+        /* only packets with length 0x8c contain a valid position;
+           after a reconnect, the clients sends shorter packets */
+        if (length == 0x8c)
+            process_position_update(client, data, length);
+
+        respond(client, socket_index, sequence,
+                packet_ack,
+                sizeof(packet_ack));
+    }
+
     /* handle login */
     if (!client->authorized) {
         /* the password is sent with every 0x00 packet (what a waste);
@@ -1476,17 +1491,6 @@ static void handle_packet(struct client *client, unsigned socket_index,
                 memcpy(client->font_buffer, data + 52, client->font_buffer_size);
             }
         }
-
-        respond(client, socket_index, sequence,
-                packet_ack,
-                sizeof(packet_ack));
-    } else {
-        /* 00 00 10 00 or 00 00 00 00: client sends player position */
-
-        /* only packets with length 0x8c contain a valid position;
-           after a reconnect, the clients sends shorter packets */
-        if (length == 0x8c)
-            process_position_update(client, data, length);
 
         respond(client, socket_index, sequence,
                 packet_ack,
@@ -1756,6 +1760,6 @@ int main(int argc, char **argv) {
 
     free_config(&config);
 
-    log(1, "exiting process %d\n", getpid());
+    log(2, "exiting process %d\n", getpid());
     return 0;
 }
