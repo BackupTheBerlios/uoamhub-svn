@@ -446,6 +446,26 @@ static void handle_packet(struct client *client,
     }
 }
 
+static ssize_t select_more_data(int sockfd, unsigned char *buffer,
+                                size_t max_len) {
+    fd_set rfds;
+    int ret;
+    struct timeval tv;
+
+    FD_ZERO(&rfds);
+    FD_SET(sockfd, &rfds);
+    tv.tv_sec = 0;
+    tv.tv_usec = 0;
+
+    ret = select(sockfd + 1, &rfds, NULL, NULL, &tv);
+    if (ret < 0)
+        return -1;
+    if (ret == 0)
+        return 0;
+
+    return recv(sockfd, buffer, max_len, 0);
+}
+
 static void client_data_available(struct client *client) {
     unsigned char buffer[4096];
     ssize_t nbytes;
@@ -498,6 +518,19 @@ static void client_data_available(struct client *client) {
 
         nbytes -= (ssize_t)length;
         position += length;
+
+        /* try to read more data */
+        if (nbytes > 0) {
+            ssize_t ret;
+
+            memmove(buffer, buffer + position, (size_t)nbytes);
+            position = 0;
+
+            ret = select_more_data(client->sockfd, buffer + nbytes,
+                                   sizeof(buffer) - nbytes);
+            if (ret > 0)
+                nbytes += ret;
+        }
     }
 }
 
