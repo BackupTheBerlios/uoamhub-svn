@@ -391,8 +391,11 @@ static void read_config(struct config *config, int argc, char **argv) {
 }
 
 static void free_config(struct config *config) {
-    if (config->bind_address)
+    if (config->bind_address != NULL)
         freeaddrinfo(config->bind_address);
+
+    if (config->password != NULL)
+        free(config->password);
 
     memset(config, 0, sizeof(*config));
 }
