@@ -47,9 +47,9 @@
 #include <time.h>
 
 #ifdef DISABLE_LOGGING
-#define log(level, format, ...)
+#define log(level, ...)
 #else
-#define log(level, format, ...) do { if (verbose >= (level)) printf(format, __VA_ARGS__); } while (0)
+#define log(level, ...) do { if (verbose >= (level)) printf(__VA_ARGS__); } while (0)
 #endif
 
 #define RANDOM_DEVICE "/dev/urandom"
