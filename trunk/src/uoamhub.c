@@ -520,7 +520,7 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
 
             close(fds[1]);
 
-            log(4, "waiting for daemon process\n");
+            log(4, "waiting for daemon process %d\n", pid);
 
             do {
                 FD_ZERO(&rfds);
@@ -529,7 +529,7 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
                 tv.tv_usec = 100000;
                 ret = select(fds[0] + 1, &rfds, NULL, NULL, &tv);
                 if (ret > 0 && read(fds[0], buffer, sizeof(buffer)) > 0) {
-                    log(2, "detaching\n");
+                    log(2, "detaching %d\n", getpid());
                     exit(0);
                 }
 
@@ -606,7 +606,7 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
         close(fds[0]);
         loggerfd = fds[1];
 
-        log(3, "logger connected\n");
+        log(3, "logger %d connected\n", logger_pid);
     }
 
     /* chroot */
@@ -661,7 +661,7 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
 #ifndef DISABLE_DAEMON_CODE
     /* send parent process a signal */
     if (parentfd >= 0) {
-        log(4, "closing parent pipe\n");
+        log(4, "closing parent pipe %d\n", parentfd);
         write(parentfd, &parentfd, sizeof(parentfd));
         close(parentfd);
     }
@@ -899,7 +899,7 @@ static struct domain *create_domain(struct host *host, const char *password) {
 
     password_len = strlen(password);
     if (password_len >= sizeof(domain->password)) {
-        log(1, "password too long: %u\n", password_len);
+        log(1, "password too long: %u\n", (unsigned)password_len);
         return NULL;
     }
 
