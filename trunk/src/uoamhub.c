@@ -89,6 +89,7 @@ struct client {
 };
 
 struct domain {
+    struct domain *prev, *next;
     char password[20];
     struct host *host;
     struct client *clients_head;
@@ -97,7 +98,7 @@ struct domain {
 
 struct host {
     const struct config *config;
-    struct domain domains[MAX_DOMAINS];
+    struct domain *domains_head;
     unsigned num_domains;
 };
 
@@ -715,12 +716,17 @@ static void kill_client(struct client *client) {
 }
 
 static struct domain *get_domain(struct host *host, const char *password) {
-    unsigned char z;
+    struct domain *domain = host->domains_head;
 
-    for (z = 0; z < host->num_domains; z++) {
-        if (strcmp(password, host->domains[z].password) == 0)
-            return &host->domains[z];
-    }
+    if (domain == NULL)
+        return NULL;
+
+    do {
+        if (strcmp(password, domain->password) == 0)
+            return domain;
+
+        domain = domain->next;
+    } while (domain != host->domains_head);
 
     return NULL;
 }
@@ -730,11 +736,6 @@ static struct domain *create_domain(struct host *host, const char *password) {
     struct domain *domain;
 
     password_len = strlen(password);
-    if (password_len == 0) {
-        fprintf(stderr, "no password\n");
-        return NULL;
-    }
-
     if (password_len >= sizeof(domain->password)) {
         fprintf(stderr, "password too long\n");
         return NULL;
@@ -745,11 +746,30 @@ static struct domain *create_domain(struct host *host, const char *password) {
         return NULL;
     }
 
-    domain = &host->domains[host->num_domains++];
-    memset(domain, 0, sizeof(domain));
+    domain = calloc(1, sizeof(*domain));
+    if (domain == NULL)
+        return NULL;
 
     memcpy(domain->password, password, password_len);
     domain->host = host;
+
+    if (host->domains_head == NULL) {
+        assert(host->num_domains == 0);
+
+        domain->prev = domain;
+        domain->next = domain;
+        host->domains_head = domain;
+    } else {
+        assert(host->num_domains > 0);
+
+        domain->prev = host->domains_head->prev;
+        domain->next = host->domains_head;
+
+        host->domains_head->prev->next = domain;
+        host->domains_head->prev = domain;
+    }
+
+    host->num_domains++;
 
     if (verbose >= 2)
         printf("created domain '%s'\n", password);
@@ -757,17 +777,31 @@ static struct domain *create_domain(struct host *host, const char *password) {
     return domain;
 }
 
-static void kill_domain(struct host *host, unsigned n) {
-    struct domain *domain = &host->domains[n];
+static void kill_domain(struct domain *domain) {
+    struct host *host;
+
+    assert(domain != NULL);
+    assert(domain->host != NULL);
+
+    host = domain->host;
 
     while (domain->num_clients > 0)
         kill_client(domain->clients_head->prev);
 
     host->num_domains--;
 
-    if (n < host->num_domains)
-        memmove(host->domains + n, host->domains + n + 1,
-                (host->num_domains - n) * sizeof(*host->domains));
+    if (host->num_domains == 0) {
+        assert(domain->next == domain);
+        assert(domain->prev == domain);
+
+        host->domains_head = NULL;
+    } else {
+        if (domain == host->domains_head)
+            host->domains_head = domain->next;
+
+        domain->next->prev = domain->prev;
+        domain->prev->next = domain->next;
+    }
 }
 
 static int move_client(struct client *client, struct domain *domain) {
@@ -1195,34 +1229,43 @@ int main(int argc, char **argv) {
     struct config config;
     int ret, sockfd;
     struct host host;
-    unsigned z, next_client_id = 1;
+    struct domain *domain_zero, *domain;
+    unsigned next_client_id = 1;
     fd_set rfds;
 
     read_config(&config, argc, argv);
 
     /* setup uid, sockets, chroot, logger etc. */
     setup(&config, &sockfd);
-
+    
     /* create domain 0 */
     memset(&host, 0, sizeof(host));
     host.config = &config;
-    host.num_domains = 1;
-    host.domains[0].host = &host;
+
+    domain_zero = create_domain(&host, "");
+    if (domain_zero == NULL) {
+        fprintf(stderr, "failed to create domain 0\n");
+        exit(1);
+    }
 
     /* main loop */
     do {
-        int max_fd, i;
+        int max_fd;
 
         /* select() on all sockets */
         FD_ZERO(&rfds);
         FD_SET(sockfd, &rfds);
         max_fd = sockfd;
-        for (i = 0; i < (int)host.num_domains; i++) {
-            struct client *client = host.domains[i].clients_head;
+
+        domain = host.domains_head;
+        assert(domain == domain_zero);
+
+        do {
+            struct client *client = domain->clients_head;
 
             if (client != NULL) {
                 do {
-                    assert(client->domain == &host.domains[i]);
+                    assert(client->domain == domain);
 
                     if (client->should_destroy) {
                         struct client *k = client;
@@ -1236,16 +1279,20 @@ int main(int argc, char **argv) {
                         max_fd = client->sockfd;
 
                     client = client->next;
-                } while (host.domains[i].clients_head != NULL &&
-                         client != host.domains[i].clients_head);
+                } while (domain->clients_head != NULL &&
+                         client != domain->clients_head);
             }
 
-            if (i > 0 && host.domains[i].num_clients == 0) {
+            if (domain != domain_zero && domain->num_clients == 0) {
                 /* empty domain, delete it */
-                kill_domain(&host, i);
-                i--;
+                domain = domain->next;
+                kill_domain(domain->prev);
+                assert(host.domains_head == domain_zero);
+                continue;
             }
-        }
+
+            domain = domain->next;
+        } while (domain != host.domains_head);
 
         ret = select(max_fd + 1, &rfds, NULL, NULL, NULL);
         if (ret < 0) {
@@ -1268,37 +1315,44 @@ int main(int argc, char **argv) {
 
             ret = accept(sockfd, &addr, &addrlen);
             if (ret >= 0) {
-                create_client(&host.domains[0], ret, next_client_id++);
+                create_client(domain_zero, ret, next_client_id++);
             } else {
                 fprintf(stderr, "accept failed: %s\n", strerror(errno));
             }
         }
 
-        for (z = 0; z < host.num_domains; z++) {
-            struct client *client = host.domains[z].clients_head;
+        domain = host.domains_head;
+        assert(domain == domain_zero);
 
-            if (client == NULL)
-                continue;
+        do {
+            struct client *client = domain->clients_head, *next;
 
-            do {
-                assert(client->domain == &host.domains[z]);
+            if (client != NULL) {
+                do {
+                    assert(client->domain == domain);
 
-                if (FD_ISSET(client->sockfd, &rfds)) {
-                    FD_CLR(client->sockfd, &rfds);
-                    client_data_available(client);
-                }
+                    next = client->next;
+                    if (next == domain->clients_head)
+                        next = NULL;
 
-                client = client->next;
-            } while (host.domains[z].clients_head != NULL &&
-                     client != host.domains[z].clients_head);
-        }
+                    if (FD_ISSET(client->sockfd, &rfds)) {
+                        FD_CLR(client->sockfd, &rfds);
+                        client_data_available(client);
+                    }
+
+                    client = next;
+                } while (client != NULL);
+            }
+
+            domain = domain->next;
+        } while (domain != host.domains_head);
     } while (!should_exit);
 
     /* cleanup */
     close(sockfd);
 
     while (host.num_domains > 0)
-        kill_domain(&host, host.num_domains - 1);
+        kill_domain(host.domains_head->prev);
 
     free_config(&config);
 
