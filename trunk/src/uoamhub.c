@@ -450,7 +450,7 @@ static void client_data_available(struct client *client) {
     unsigned char buffer[4096];
     ssize_t nbytes;
     struct packet_header *header = (struct packet_header*)buffer;
-    unsigned sequence;
+    size_t length;
 
     /* read from stream */
     nbytes = recv(client->sockfd, buffer, sizeof(buffer), 0);
@@ -466,26 +466,38 @@ static void client_data_available(struct client *client) {
         return;
     }
 
-    if (nbytes < 16) {
-        printf("packet from client %u is too small (%lu bytes)\n",
-               client->id, (unsigned long)nbytes);
-        client->should_destroy = 1;
-        return;
+    while (nbytes > 0) {
+        if (nbytes < 16) {
+            fprintf(stderr, "packet from client %u is too small (%lu bytes)\n",
+                   client->id, (unsigned long)nbytes);
+            client->should_destroy = 1;
+            return;
+        }
+
+        /* check header */
+        if (header->five != 0x05 || header->zero1 != 0x00 ||
+            header->three != 0x03 || header->ten != 0x10) {
+            fprintf(stderr, "malformed packet, killing client %u\n",
+                    client->id);
+            client->should_destroy = 1;
+            return;
+        }
+
+        /* extract data */
+        length = read_uint32(buffer + 8);
+
+        if (length < 16 || length > (size_t)nbytes) {
+            fprintf(stderr, "malformed length %lu in packet, killing client %u\n",
+                    (unsigned long)length, client->id);
+            client->should_destroy = 1;
+            return;
+        }
+
+        /* handle packet */
+        handle_packet(client, buffer, length);
+
+        nbytes -= (ssize_t)length;
     }
-
-    /* check header */
-    if (header->five != 0x05 || header->zero1 != 0x00 ||
-        header->three != 0x03 || header->ten != 0x10) {
-        printf("malformed packet, killing client\n");
-        client->should_destroy = 1;
-        return;
-    }
-
-    /* extract data */
-    sequence = read_uint32(buffer + 12);
-
-    /* handle packet */
-    handle_packet(client, buffer, (size_t)nbytes);
 }
 
 int main(int argc, char **argv) {
