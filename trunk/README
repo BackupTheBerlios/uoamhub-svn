@@ -31,9 +31,9 @@ Compilation
 You do not need this, if you downloaded a binary distribution of
 uoamhub.
 
-uoamhub runs on Linux (should run on all distributions), FreeBSD and
-similar operating systems; maybe MacOS X, OpenBSD, NetBSD, AIX,
-Solaris, HP/UX, Windows/Cygwin and many others - but I havn't tested
+uoamhub runs on Linux (should run on all distributions), FreeBSD,
+Solaris and similar operating systems; maybe MacOS X, OpenBSD, NetBSD,
+AIX, HP/UX, Windows/Cygwin and many others - but I havn't tested
 that. Please tell me whether it does.
 
 You need gcc and GNU make. Go to the source directory and type:
