@@ -49,7 +49,7 @@
 #ifdef DISABLE_LOGGING
 #define log(level, ...)
 #else
-#define log(level, ...) do { if (verbose >= (level)) printf(__VA_ARGS__); } while (0)
+#define log(level, ...) do { if (verbose >= (level)) { printf(__VA_ARGS__); fflush(stdout); } } while (0)
 #endif
 
 /** source for client ids (which are important for security). if you
