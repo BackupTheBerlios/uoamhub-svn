@@ -86,7 +86,7 @@ password, and only this password will be accepted. To enable this,
 write the password to a file and tell uoamhub where the file is:
 
  umask 077
- echo topsecret /tmp/uoampasswd
+ echo topsecret >/tmp/uoampasswd
  uoamhub --password /tmp/uoampasswd
 
 
