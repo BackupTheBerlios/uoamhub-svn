@@ -22,6 +22,7 @@
 #include <assert.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 #include <netdb.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -29,12 +30,14 @@
 #include <string.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <getopt.h>
 
 #define MAX_DOMAINS 8
 #define MAX_CLIENTS 64
 #define MAX_CHATS 8
 
-static int verbose = 9;
+static const char VERSION[] = "0.1.0";
+static int verbose = 1;
 static int should_exit = 0;
 
 struct config {
@@ -170,14 +173,62 @@ static int getaddrinfo_helper(const char *host_and_port, int default_port,
     return getaddrinfo(host, port, hints, aip);
 }
 
+static void usage(void) __attribute__ ((noreturn));
+static void usage(void) {
+    fprintf(stderr, "usage: uoamhub [options]\n\n"
+            "valid options:\n"
+            " -h             help (this text)\n"
+            " -V             print version number\n"
+            " --verbose\n"
+            " -v             increase verbosity (default 1)\n"
+            " --quiet\n"
+            " -q             reset verbosity to 0\n"
+            );
+    exit(1);
+}
+
 static void read_config(struct config *config, int argc, char **argv) {
     int ret;
     struct addrinfo hints;
-
-    (void)argc;
-    (void)argv;
+    static const struct option long_options[] = {
+        {"version", 0, 0, 'V'},
+        {"verbose", 0, 0, 'v'},
+        {"quiet", 0, 0, 'q'},
+        {"help", 0, 0, 'h'},
+        {0,0,0,0}
+    };
 
     memset(config, 0, sizeof(*config));
+
+    while (1) {
+        int option_index = 0;
+
+        ret = getopt_long(argc, argv, "Vvqh",
+                          long_options, &option_index);
+        if (ret == -1)
+            break;
+
+        switch (ret) {
+        case 'V':
+            printf("uoamhub v%s\n", VERSION);
+            exit(0);
+        case 'v':
+            verbose++;
+            break;
+        case 'q':
+            verbose = 0;
+            break;
+        case 'h':
+            usage();
+        default:
+            exit(1);
+        }
+    }
+
+    if (optind < argc) {
+        fprintf(stderr, "unrecognized argument: %s\n", argv[optind]);
+        usage();
+    }
 
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = PF_INET;
