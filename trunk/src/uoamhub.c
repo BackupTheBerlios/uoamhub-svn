@@ -289,6 +289,40 @@ static void respond(struct client *client, unsigned sequence,
     send(client->sockfd, response, response_length, 0);
 }
 
+static void handle_poll(struct client *client, unsigned sequence) {
+    if (client->num_chats > 0) {
+        /* send the first chat entry */
+        unsigned char buffer[4096];
+        size_t pos;
+
+        /* build the packet */
+        memcpy(buffer, packet_chat, sizeof(packet_chat));
+        pos = sizeof(packet_chat);
+
+        memcpy(buffer + pos, client->chats[0]->data,
+               client->chats[0]->size);
+        pos += client->chats[0]->size;
+
+        memset(buffer + pos, 0, 5);
+        pos += 5;
+
+        /* free memory */
+        free(client->chats[0]);
+        client->num_chats--;
+        if (client->num_chats > 0)
+            memmove(client->chats, client->chats + 1,
+                    sizeof(client->chats[0]) * client->num_chats);
+
+        /* send packet */
+        respond(client, sequence, buffer, pos);
+    } else {
+        /* nothing in the queue */
+        respond(client, sequence,
+                packet_ack2,
+                sizeof(packet_ack2));
+    }
+}
+
 int main(int argc, char **argv) {
     struct addrinfo hints, *bind_address;
     int ret, sockfd, max_fd;
@@ -466,31 +500,7 @@ int main(int argc, char **argv) {
                             } else if (buffer[20] == 0x01 && buffer[22] == 0x01) {
                                 /* 01 00 01 00: poll chat */
 
-                                if (client->num_chats > 0) {
-                                    size_t pos;
-
-                                    memcpy(buffer2, packet_chat, sizeof(packet_chat));
-                                    pos = sizeof(packet_chat);
-
-                                    memcpy(buffer2 + pos, client->chats[0]->data,
-                                           client->chats[0]->size);
-                                    pos += client->chats[0]->size;
-
-                                    free(client->chats[0]);
-                                    client->num_chats--;
-                                    if (client->num_chats > 0)
-                                        memmove(client->chats, client->chats + 1,
-                                                sizeof(client->chats[0]) * client->num_chats);
-
-                                    memset(buffer2 + pos, 0, 5);
-                                    pos += 5;
-
-                                    respond(client, sequence, buffer2, pos);
-                                } else {
-                                    respond(client, sequence,
-                                            packet_ack2,
-                                            sizeof(packet_ack2));
-                                }
+                                handle_poll(client, sequence);
                             } else if (buffer[20] == 0x01) {
                                 /* 01 00 00 00: client sends chat message */
                                 if (buffer[52] == 0x01)
