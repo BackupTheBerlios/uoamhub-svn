@@ -1450,15 +1450,20 @@ static void handle_packet(struct client *client, unsigned socket_index,
 
         handle_poll(client, socket_index, sequence);
     } else if (data[20] == 0x01) {
-        /* 01 00 00 00: chat */
+        /* 01 00 00 00: chat; data[52] is the code of the
+           sub-sub-type */
 
-        /* packets with 0x02 is evil for some reason */
-        /* 0x01 = chat */
-        /* 0x03 = font and color */
+        /* data[52]==0x02 is evil for some reason, it lets the
+           UOAutoMap client crash under certain circumstances; only
+           broadcast 0x01 (chat text) and 0x03 (font and color) to the
+           other clients */
         if (length < 2048 &&
             (data[52] == 0x01 || data[52] == 0x03))
             enqueue_chat(client->domain, data + 52, length - 52);
 
+        /* remember font+color, we need this when a new client
+           connects, to give him information about all existing
+           clients */
         if (data[52] == 0x03) {
             if (client->font_buffer != NULL)
                 free(client->font_buffer);
@@ -1475,6 +1480,8 @@ static void handle_packet(struct client *client, unsigned socket_index,
     } else {
         /* 00 00 10 00 or 00 00 00 00: client sends player position */
 
+        /* only packets with length 0x8c contain a valid position;
+           after a reconnect, the clients sends shorter packets */
         if (length == 0x8c)
             process_position_update(client, data, length);
 
