@@ -31,6 +31,7 @@
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <netdb.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -401,7 +402,7 @@ static void free_config(struct config *config) {
 }
 
 static void setup(struct config *config, int *sockfdp) {
-    int ret, sockfd;
+    int ret, sockfd, parentfd = -1, loggerfd = -1;
     pid_t logger_pid = -1;
     struct sigaction sa;
 
@@ -432,14 +433,55 @@ static void setup(struct config *config, int *sockfdp) {
 
     /* daemonize */
     if (!config->no_daemon && getppid() != 1) {
-        pid_t pid = fork();
+        int fds[2];
+        pid_t pid;
+
+        ret = pipe(fds);
+        if (ret < 0) {
+            fprintf(stderr, "pipe failed: %s\n", strerror(errno));
+            exit(1);
+        }
+
+        pid = fork();
         if (pid < 0) {
             fprintf(stderr, "fork failed: %s\n", strerror(errno));
             exit(1);
         }
 
-        if (pid > 0)
-            exit(0);
+        if (pid > 0) {
+            int status;
+            fd_set rfds;
+            char buffer[256];
+            struct timeval tv;
+
+            close(fds[1]);
+
+            if (verbose >= 4)
+                fprintf(stderr, "waiting for daemon process\n");
+
+            do {
+                FD_ZERO(&rfds);
+                FD_SET(fds[0], &rfds);
+                tv.tv_sec = 0;
+                tv.tv_usec = 100000;
+                ret = select(fds[0] + 1, &rfds, NULL, NULL, &tv);
+                if (ret > 0 && read(fds[0], buffer, sizeof(buffer)) > 0) {
+                    if (verbose >= 2)
+                        fprintf(stderr, "detaching\n");
+                    exit(0);
+                }
+
+                pid = waitpid(pid, &status, WNOHANG);
+            } while (pid <= 0);
+
+            if (verbose >= 3)
+                fprintf(stderr, "daemon process exited with %d\n",
+                        WEXITSTATUS(status));
+            exit(WEXITSTATUS(status));
+        }
+
+        close(fds[0]);
+        parentfd = fds[1];
 
         setsid();
 
@@ -503,10 +545,8 @@ static void setup(struct config *config, int *sockfdp) {
         if (verbose >= 2)
             printf("logger started as pid %d\n", logger_pid);
 
-        dup2(fds[1], 1);
-        dup2(fds[1], 2);
         close(fds[0]);
-        close(fds[1]);
+        loggerfd = fds[1];
 
         if (verbose >= 3)
             printf("logger connected\n");
@@ -520,9 +560,9 @@ static void setup(struct config *config, int *sockfdp) {
                     config->chroot_dir, strerror(errno));
             exit(1);
         }
-
-        chdir("/");
     }
+
+    chdir("/");
 
     /* setuid */
     if (config->uid > 0) {
@@ -559,6 +599,21 @@ static void setup(struct config *config, int *sockfdp) {
     sa.sa_handler = SIG_IGN;
     sigaction(SIGUSR1, &sa, NULL);
     sigaction(SIGUSR2, &sa, NULL);
+
+    /* send parent process a signal */
+    if (parentfd >= 0) {
+        if (verbose >= 4)
+            fprintf(stderr, "closing parent pipe\n");
+        write(parentfd, &parentfd, sizeof(parentfd));
+        close(parentfd);
+    }
+
+    /* now connect logger */
+    if (loggerfd >= 0) {
+        dup2(loggerfd, 1);
+        dup2(loggerfd, 2);
+        close(loggerfd);
+    }
 }
 
 static void free_client(struct client *client) {
