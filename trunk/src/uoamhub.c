@@ -885,7 +885,8 @@ static void enqueue_chat(struct domain *domain,
         return;
 
     do {
-        enqueue_client_chat(client, data, size);
+        if (client->master_id == 0)
+            enqueue_client_chat(client, data, size);
 
         client = client->next;
     } while (client != domain->clients_head);
