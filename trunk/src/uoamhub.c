@@ -80,13 +80,23 @@ struct chat {
 };
 
 struct client {
+    /** doubly linked list */
     struct client *prev, *next;
+    /** client id */
     unsigned id;
-    int sockets[16];
+    /** list of all sockets (a client can use several sockets at
+        once) */
+    int sockets[MAX_SOCKETS];
+    /** number of sockets in the sockets array */
     unsigned num_sockets;
+    /** unix time when this client times out, unless he successfully
+        talks to server meanwhile */
     time_t timeout;
+    /** the domain this client is logged in */
     struct domain *domain;
+    /** several flags */
     int should_destroy:1, handshake:1, authorized:1, have_position:1;
+    
     struct player_info info;
     struct chat *chats[MAX_CHATS];
     unsigned num_chats;
