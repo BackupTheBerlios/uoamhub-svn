@@ -57,7 +57,7 @@
 #define MAX_DOMAINS 64
 #define MAX_CLIENTS 256
 #define MAX_SOCKETS 16
-#define MAX_CHATS 8
+#define MAX_CHATS 64
 
 static const char VERSION[] = "0.1.0";
 #ifndef DISABLE_LOGGING
@@ -120,6 +120,10 @@ struct client {
     int should_destroy:1, handshake:1, authorized:1, have_position:1;
     /** player info, including name and position */
     struct player_info info;
+    /** chat settings */
+    void *font_buffer;
+    /** size of the chat settings */
+    size_t font_buffer_size;
     /** pending chat entries */
     struct chat *chats[MAX_CHATS];
     /** number of chat entries not yet sent to the client */
@@ -688,6 +692,9 @@ static void free_client(struct client *client) {
     for (z = 0; z < client->num_sockets; z++)
         close(client->sockets[z]);
 
+    if (client->font_buffer != NULL)
+        free(client->font_buffer);
+
     for (z = 0; z < client->num_chats; z++) {
         free(client->chats[z]);
     }
@@ -1177,6 +1184,21 @@ static void handle_query_list(struct client *client, unsigned socket_index,
     respond(client, socket_index, sequence, buffer, pos);
 }
 
+static void resend_fonts(struct client *client) {
+    struct domain *domain = client->domain;
+    struct client *p = domain->clients_head;
+
+    assert(p != NULL);
+
+    do {
+        assert(p->domain == domain);
+
+        if (p != client && p->font_buffer != NULL &&
+            p->font_buffer_size > 0)
+            enqueue_client_chat(client, p->font_buffer, p->font_buffer_size);
+    } while (p != domain->clients_head);
+}
+
 static int login(struct client *client, const char *password) {
     struct domain *domain;
     int ret;
@@ -1212,6 +1234,8 @@ static int login(struct client *client, const char *password) {
         client->should_destroy = 1;
         return 0;
     }
+
+    resend_fonts(client);
 
     client->authorized = 1;
 
@@ -1352,6 +1376,16 @@ static void handle_packet(struct client *client, unsigned socket_index,
             if (length < 2048 &&
                 (data[52] == 0x01 || data[52] == 0x03))
                 enqueue_chat(client->domain, data + 52, length - 52);
+
+            if (data[52] == 0x03) {
+                if (client->font_buffer != NULL)
+                    free(client->font_buffer);
+                client->font_buffer_size = length - 52;
+                client->font_buffer = malloc(client->font_buffer_size);
+                if (client->font_buffer != NULL) {
+                    memcpy(client->font_buffer, data + 52, client->font_buffer_size);
+                }
+            }
 
             respond(client, socket_index, sequence,
                     packet_ack,
