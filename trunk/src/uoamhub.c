@@ -219,23 +219,53 @@ static void enqueue_chat(struct domain *domain,
     printf("leaving enqueue_chat\n");
 }
 
+static void dump_packet(FILE *file, unsigned char *data, size_t length) {
+    size_t y;
+
+    for (y = 0; y < length; y += 0x10, data += 0x10) {
+        size_t x, columns = length - y;
+        if (columns > 0x10)
+            columns = 0x10;
+
+        fprintf(file, "%08lx   ", (unsigned long)y);
+        for (x = 0; x < columns; x++) {
+            if (x == 0x08)
+                fprintf(file, " ");
+
+            fprintf(file, "%02x ", data[x]);
+        }
+
+        for (; x < 0x10; x++) {
+            if (x == 0x08)
+                fprintf(file, " ");
+
+            fprintf(file, "   ");
+        }
+
+        fprintf(file, " ");
+        for (x = 0; x < 0x10; x++) {
+            char ch = y + x < length
+                ? (data[x] >= 0x20 ? data[x] : '.')
+                : ' ';
+            fputc(ch, file);
+        }
+
+        fprintf(file, "\n");
+    }
+}
+
 static void respond(struct client *client, unsigned char *request,
                     unsigned char *response, size_t response_length) {
-    size_t i;
-
     assert(response_length >= 16);
 
     memcpy(response + 12, request + 12, 4);
 
     send(client->sockfd, response, response_length, 0);
 
-    printf("response: len=%lu\n", (unsigned long)response_length);
-    for (i = 0; i < response_length; i++) {
-        printf("%02x ", response[i]);
-        if (i % 16 == 15)
-            printf("\n");
+    if (verbose >= 4) {
+        dump_packet(stdout, response, response_length);
+        printf("\n");
     }
-    printf("\n\n");
 }
 
 int main(int argc, char **argv) {
@@ -348,17 +378,14 @@ int main(int argc, char **argv) {
                 for (w = 0; w < domains[z].num_clients; w++, client++) {
                     if (FD_ISSET(client->sockfd, &rfds)) {
                         unsigned char buffer[4096], buffer2[4096];
-                        ssize_t nbytes, i;
+                        ssize_t nbytes;
                         struct packet_header *header = (struct packet_header*)buffer;
 
                         nbytes = recv(client->sockfd, buffer, sizeof(buffer), 0);
-                        printf("packet from client %u len=%ld\n", client->id, (long)nbytes);
-                        for (i = 0; i < nbytes; i++) {
-                            printf("%02x ", buffer[i]);
-                            if (i % 16 == 15)
-                                printf("\n");
+                        if (verbose >= 4) {
+                            dump_packet(stdout, buffer, (size_t)nbytes);
+                            printf("\n");
                         }
-                        printf("\n\n");
 
                         if (nbytes == 0) {
                             printf("client %u disconnected\n", client->id);
