@@ -749,6 +749,8 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
     sa.sa_handler = SIG_IGN;
     sigaction(SIGUSR1, &sa, NULL);
     sigaction(SIGUSR2, &sa, NULL);
+    sigaction(SIGALRM, &sa, NULL);
+    sigaction(SIGPIPE, &sa, NULL);
 
 #ifndef DISABLE_DAEMON_CODE
     /* send parent process a signal */
