@@ -144,6 +144,9 @@ static unsigned char packet_response2[] = {
 static void exit_signal_handler(int sig) {
     (void)sig;
 
+    if (verbose >= 2)
+        printf("signal received, shutting down...\n");
+
     should_exit++;
 }
 
@@ -759,4 +762,7 @@ int main(int argc, char **argv) {
             kill_client(&domains[z], 0);
 
     free_config(&config);
+
+    if (verbose >= 1)
+        printf("exiting\n");
 }
