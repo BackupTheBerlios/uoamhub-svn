@@ -1,3 +1,10 @@
+uoamhub (0.9.1) unstable; urgency=low
+
+  * use getopt() if getopt_long() is not available
+  * fixed long pid_t warnings
+
+ --
+
 uoamhub (0.9) unstable; urgency=low
 
   * initial release

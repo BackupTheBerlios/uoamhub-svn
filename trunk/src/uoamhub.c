@@ -41,7 +41,9 @@
 #include <string.h>
 #include <stdlib.h>
 #include <signal.h>
+#ifdef __GLIBC__
 #include <getopt.h>
+#endif
 #include <pwd.h>
 #include <grp.h>
 #include <time.h>
@@ -73,7 +75,7 @@
 #define MAX_CHATS 64
 
 /** version number of this software */
-static const char VERSION[] = "0.9";
+static const char VERSION[] = "0.9.1";
 
 #ifndef DISABLE_LOGGING
 /** verbosity - increasing this will trash the screen */
@@ -360,6 +362,7 @@ static int read_file_string(const char *filename, char **value) {
 static void read_config(struct config *config, int argc, char **argv) {
     int ret;
     struct addrinfo hints;
+#ifdef __GLIBC__
     static const struct option long_options[] = {
         {"version", 0, 0, 'V'},
         {"verbose", 0, 0, 'v'},
@@ -373,6 +376,7 @@ static void read_config(struct config *config, int argc, char **argv) {
         {"password", 1, 0, 'w'},
         {0,0,0,0}
     };
+#endif
 #ifndef DISABLE_DAEMON_CODE
     struct passwd *pw;
     struct stat st;
@@ -382,10 +386,14 @@ static void read_config(struct config *config, int argc, char **argv) {
     config->port = 2000;
 
     while (1) {
+#ifdef __GLIBC__
         int option_index = 0;
 
         ret = getopt_long(argc, argv, "Vvqhp:r:u:Dl:w:",
                           long_options, &option_index);
+#else
+        ret = getopt(argc, argv, "Vvqhp:r:u:Dl:w:");
+#endif
         if (ret == -1)
             break;
 
@@ -577,7 +585,7 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
 
             close(fds[1]);
 
-            log(4, "waiting for daemon process %d\n", pid);
+            log(4, "waiting for daemon process %ld\n", (long)pid);
 
             do {
                 FD_ZERO(&rfds);
@@ -586,7 +594,7 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
                 tv.tv_usec = 100000;
                 ret = select(fds[0] + 1, &rfds, NULL, NULL, &tv);
                 if (ret > 0 && read(fds[0], buffer, sizeof(buffer)) > 0) {
-                    log(2, "detaching %d\n", getpid());
+                    log(2, "detaching %ld\n", (long)getpid());
                     exit(0);
                 }
 
@@ -609,7 +617,7 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
         signal(SIGTTOU, SIG_IGN);
         signal(SIGTTIN, SIG_IGN);
 
-        log(3, "daemonized as pid %d\n", getpid());
+        log(3, "daemonized as pid %ld\n", (long)getpid());
     }
 
     /* write PID file */
@@ -623,7 +631,7 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
             exit(1);
         }
 
-        fprintf(file, "%d\n", getpid());
+        fprintf(file, "%ld\n", (long)getpid());
         fclose(file);
     }
 
@@ -659,12 +667,12 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
             exit(1);
         }
 
-        log(2, "logger started as pid %d\n", logger_pid);
+        log(2, "logger started as pid %ld\n", (long)logger_pid);
 
         close(fds[0]);
         loggerfd = fds[1];
 
-        log(3, "logger %d connected\n", logger_pid);
+        log(3, "logger %ld connected\n", (long)logger_pid);
     }
 
     /* chroot */
