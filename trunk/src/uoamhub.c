@@ -1500,18 +1500,19 @@ static void handle_packet(struct client *client, unsigned socket_index,
     }
 
     /* handle login */
-    if (!client->authorized) {
+    if (memchr(data + 24, 0, 20) == NULL) {
+        log(1, "malformed password field from, killing client %s\n",
+            client->name);
+        client->should_destroy = 1;
+        return;
+    }
+
+    if (!client->authorized ||
+        strcmp((const char*)(data + 24), client->domain->password) != 0) {
         /* the password is sent with every 0x00 packet (what a waste);
            we use the first 0x00 packet to log in and ignore all
            following passwords */
         int ret;
-
-        if (memchr(data + 24, 0, 20) == NULL) {
-            log(1, "malformed password field from, killing client %s\n",
-                client->name);
-            client->should_destroy = 1;
-            return;
-        }
 
         ret = login(client, (const char*)(data + 24));
         if (!ret)
