@@ -864,6 +864,8 @@ int main(int argc, char **argv) {
             int w;
 
             for (w = 0; w < (int)host.domains[i].num_clients; w++, client++) {
+                assert(client->domain == &host.domains[i]);
+
                 if (client->should_destroy) {
                     kill_client(&host.domains[i], w--);
                     client--;
@@ -914,6 +916,8 @@ int main(int argc, char **argv) {
             unsigned w;
 
             for (w = 0; w < host.domains[z].num_clients; w++, client++) {
+                assert(client->domain == &host.domains[z]);
+
                 if (FD_ISSET(client->sockfd, &rfds))
                     client_data_available(client);
             }
