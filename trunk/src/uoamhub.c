@@ -32,6 +32,7 @@
 #include <sys/select.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <arpa/inet.h>
 #include <netdb.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -82,6 +83,12 @@ struct chat {
 struct client {
     /** doubly linked list */
     struct client *prev, *next;
+    /** socket address */
+    struct sockaddr address;
+    /** length of address */
+    socklen_t address_length;
+    /** visible name */
+    char name[64];
     /** client id */
     unsigned id;
     /** list of all sockets (a client can use several sockets at
@@ -716,7 +723,28 @@ static void remove_client(struct client *client) {
     client->domain = NULL;
 }
 
-static struct client *create_client(struct domain *domain, int sockfd, unsigned id) {
+static void update_client_name(struct client *client) {
+    struct sockaddr_in *addr_in = (struct sockaddr_in*)&client->address;
+    char ip[16];
+
+    inet_ntop(addr_in->sin_family, &addr_in->sin_addr,
+              ip, sizeof(ip));
+
+    if (client->have_position) {
+        snprintf(client->name, sizeof(client->name),
+                 "%s('%s';%u.%u.%u.%u)", ip,
+                 client->info.noip.name,
+                 client->info.ip[0], client->info.ip[1],
+                 client->info.ip[2], client->info.ip[3]);
+    } else {
+        snprintf(client->name, sizeof(client->name),
+                 "%s:%u", ip, addr_in->sin_port);
+    }
+}
+
+static struct client *create_client(struct domain *domain, int sockfd,
+                                    struct sockaddr *addr, socklen_t addrlen,
+                                    unsigned id) {
     struct client *client;
     int ret;
 
@@ -724,10 +752,15 @@ static struct client *create_client(struct domain *domain, int sockfd, unsigned 
     if (client == NULL)
         return NULL;
 
+    if (addrlen > sizeof(client->address))
+        addrlen = sizeof(client->address);
+    memcpy(&client->address, addr, addrlen);
     client->id = id;
     client->sockets[0] = sockfd;
     client->num_sockets = 1;
     client->timeout = time(NULL) + 60;
+
+    update_client_name(client);
 
     ret = add_client(domain, client);
     if (!ret) {
@@ -737,7 +770,7 @@ static struct client *create_client(struct domain *domain, int sockfd, unsigned 
     }
 
     if (verbose >= 1)
-        printf("new client: %u\n", client->id);
+        printf("new client: %s\n", client->name);
 
     return client;
 }
@@ -764,7 +797,7 @@ static int append_client(struct client *dest, struct client *src,
 
 static void kill_client(struct client *client) {
     if (verbose > 0)
-        printf("kill_client %u\n", client->id);
+        printf("kill_client %s\n", client->name);
 
     remove_client(client);
     free_client(client);
@@ -1016,7 +1049,7 @@ static void respond(struct client *client, unsigned socket_index,
 
     /* dump it */
     if (verbose >= 6) {
-        printf("sending to client %u\n", client->id);
+        printf("sending to client %s\n", client->name);
         dump_packet(stdout, response, response_length);
         printf("\n");
     }
@@ -1037,13 +1070,17 @@ static void process_position_update(struct client *client,
     (void)length;
 
     if (memchr(info->noip.name, 0, sizeof(info->noip.name)) == NULL) {
-        fprintf(stderr, "client %u: no NUL character in name\n",
-                client->id);
+        fprintf(stderr, "client %s: no NUL character in name\n",
+                client->name);
         return;
     }
 
     memcpy(&client->info, info, sizeof(client->info));
-    client->have_position = 1;
+
+    if (!client->have_position) {
+        client->have_position = 1;
+        update_client_name(client);
+    }
 }
 
 static void handle_query_list(struct client *client, unsigned socket_index,
@@ -1089,8 +1126,8 @@ static int login(struct client *client, const char *password) {
     int ret;
 
     if (password[0] == 0) {
-        fprintf(stderr, "empty password from client %u, rejecting\n",
-                client->id);
+        fprintf(stderr, "empty password from client %s, rejecting\n",
+                client->name);
         client->should_destroy = 1;
         return 0;
     }
@@ -1099,16 +1136,16 @@ static int login(struct client *client, const char *password) {
     if (domain == NULL) {
         if (client->domain->host->config->password != NULL &&
             strcmp(password, client->domain->host->config->password) != 0) {
-            fprintf(stderr, "wrong password, rejecting client %u\n",
-                    client->id);
+            fprintf(stderr, "wrong password, rejecting client %s\n",
+                    client->name);
             client->should_destroy = 1;
             return 0;
         }
 
         domain = create_domain(client->domain->host, password);
         if (domain == NULL) {
-            fprintf(stderr, "domain creation failed, rejecting client %u\n",
-                    client->id);
+            fprintf(stderr, "domain creation failed, rejecting client %s\n",
+                    client->name);
             client->should_destroy = 1;
             return 0;
         }
@@ -1126,8 +1163,8 @@ static int login(struct client *client, const char *password) {
     client->authorized = 1;
 
     if (verbose >= 1)
-        printf("client %u logged into domain '%s'\n",
-               client->id, domain->password);
+        printf("client %s logged into domain '%s'\n",
+               client->name, domain->password);
 
     return 1;
 }
@@ -1193,15 +1230,15 @@ static void handle_packet(struct client *client, unsigned socket_index,
                 master = get_client(client->domain->host, master_id);
                 if (master == NULL) {
                     if (verbose >= 1)
-                        fprintf(stderr, "invalid master id in handshake, killing client %u\n",
-                                client->id);
+                        fprintf(stderr, "invalid master id in handshake, killing client %s\n",
+                                client->name);
                     client->should_destroy = 1;
                     return;
                 }
 
                 if (verbose >= 2)
-                    printf("appending client %u to %u\n",
-                           client->id, master->id);
+                    printf("appending client %s to %s\n",
+                           client->name, master->name);
 
                 ret = append_client(master, client, &socket_index);
                 if (ret < 0) {
@@ -1226,8 +1263,8 @@ static void handle_packet(struct client *client, unsigned socket_index,
     if (!client->handshake) {
         /* handshake omitted, kill this client */
         if (verbose >= 1)
-            fprintf(stderr, "handshake omitted, killing client %u\n",
-                    client->id);
+            fprintf(stderr, "handshake omitted, killing client %s\n",
+                    client->name);
         client->should_destroy = 1;
         return;
     }
@@ -1238,8 +1275,8 @@ static void handle_packet(struct client *client, unsigned socket_index,
             int ret;
 
             if (memchr(data + 24, 0, 20) == NULL) {
-                fprintf(stderr, "malformed password field from, killing client %u\n",
-                        client->id);
+                fprintf(stderr, "malformed password field from, killing client %s\n",
+                        client->name);
                 client->should_destroy = 1;
                 return;
             }
@@ -1321,14 +1358,14 @@ static void client_data_available(struct client *client, unsigned socket_index) 
     /* read from stream */
     nbytes = recv(client->sockets[socket_index], buffer, sizeof(buffer), 0);
     if (nbytes <= 0) {
-        printf("client %u[%u] disconnected\n", client->id, socket_index);
+        printf("client %s[%u] disconnected\n", client->name, socket_index);
         close(client->sockets[socket_index]);
         client->sockets[socket_index] = -1;
         return;
     }
 
     if (verbose >= 6) {
-        printf("received from client %u\n", client->id);
+        printf("received from client %s\n", client->name);
         dump_packet(stdout, buffer, (size_t)nbytes);
         printf("\n");
     }
@@ -1336,8 +1373,8 @@ static void client_data_available(struct client *client, unsigned socket_index) 
     while (nbytes > 0 && !client->should_destroy) {
         if (nbytes < 16) {
             /* we need 16 bytes for a header */
-            fprintf(stderr, "packet from client %u is too small (%lu bytes)\n",
-                   client->id, (unsigned long)nbytes);
+            fprintf(stderr, "packet from client %s is too small (%lu bytes)\n",
+                    client->name, (unsigned long)nbytes);
             client->should_destroy = 1;
             return;
         }
@@ -1345,8 +1382,8 @@ static void client_data_available(struct client *client, unsigned socket_index) 
         /* check header */
         if (header->five != 0x05 || header->zero1 != 0x00 ||
             header->three != 0x03 || header->ten != 0x10) {
-            fprintf(stderr, "malformed packet, killing client %u\n",
-                    client->id);
+            fprintf(stderr, "malformed packet, killing client %s\n",
+                    client->name);
             client->should_destroy = 1;
             return;
         }
@@ -1355,8 +1392,8 @@ static void client_data_available(struct client *client, unsigned socket_index) 
         length = read_uint32(buffer + 8);
 
         if (length < 16 || length > (size_t)nbytes) {
-            fprintf(stderr, "malformed length %lu in packet, killing client %u\n",
-                    (unsigned long)length, client->id);
+            fprintf(stderr, "malformed length %lu in packet, killing client %s\n",
+                    (unsigned long)length, client->name);
             client->should_destroy = 1;
             return;
         }
@@ -1441,7 +1478,7 @@ int main(int argc, char **argv) {
 
                 if (now > client->timeout) {
                     if (verbose >= 1)
-                        printf("timeout on client %u\n", client->id);
+                        printf("timeout on client %s\n", client->name);
                     kill_client(client);
                     continue;
                 }
@@ -1491,7 +1528,8 @@ int main(int argc, char **argv) {
 
             ret = accept(sockfd, &addr, &addrlen);
             if (ret >= 0) {
-                create_client(domain_zero, ret, next_client_id++);
+                create_client(domain_zero, ret, &addr, addrlen,
+                              next_client_id++);
             } else {
                 fprintf(stderr, "accept failed: %s\n", strerror(errno));
             }
