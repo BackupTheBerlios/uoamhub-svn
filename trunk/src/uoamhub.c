@@ -82,6 +82,11 @@ struct domain {
     unsigned num_clients;
 };
 
+struct host {
+    struct domain domains[MAX_DOMAINS];
+    unsigned num_domains;
+};
+
 struct packet_header {
     /* WARNING: big endian */
     unsigned char five, zero1, type, three, ten;
@@ -635,15 +640,15 @@ static void client_data_available(struct client *client) {
 int main(int argc, char **argv) {
     struct config config;
     int ret, sockfd;
-    struct domain domains[MAX_DOMAINS];
-    unsigned num_domains = 1, z, next_client_id = 1;
+    struct host host;
+    unsigned z, next_client_id = 1;
     struct sigaction sa;
     fd_set rfds;
 
     read_config(&config, argc, argv);
 
     /* create domain 0 */
-    memset(domains, 0, sizeof(domains[0]));
+    memset(&host, 0, sizeof(host));
 
     /* server socket stuff */
     sockfd = socket(PF_INET, SOCK_STREAM, 0);
@@ -688,13 +693,13 @@ int main(int argc, char **argv) {
         FD_ZERO(&rfds);
         FD_SET(sockfd, &rfds);
         max_fd = sockfd;
-        for (i = 0; i < (int)num_domains; i++) {
-            struct client *client = domains[i].clients;
+        for (i = 0; i < (int)host.num_domains; i++) {
+            struct client *client = host.domains[i].clients;
             int w;
 
-            for (w = 0; w < (int)domains[i].num_clients; w++, client++) {
+            for (w = 0; w < (int)host.domains[i].num_clients; w++, client++) {
                 if (client->should_destroy) {
-                    kill_client(&domains[i], w--);
+                    kill_client(&host.domains[i], w--);
                     client--;
                     continue;
                 }
@@ -704,13 +709,13 @@ int main(int argc, char **argv) {
                     max_fd = client->sockfd;
             }
 
-            if (i > 0 && domains[i].num_clients == 0) {
+            if (i > 0 && host.domains[i].num_clients == 0) {
                 /* empty domain, delete it */
-                num_domains--;
+                host.num_domains--;
 
-                if (i < (int)num_domains)
-                    memmove(domains + i, domains + i + 1,
-                            sizeof(domains[i]) * (num_domains - i));
+                if (i < (int)host.num_domains)
+                    memmove(host.domains + i, host.domains + i + 1,
+                            sizeof(host.domains[i]) * (host.num_domains - i));
 
                 i--;
             }
@@ -737,17 +742,17 @@ int main(int argc, char **argv) {
 
             ret = accept(sockfd, &addr, &addrlen);
             if (ret >= 0) {
-                create_client(&domains[0], ret, next_client_id++);
+                create_client(&host.domains[0], ret, next_client_id++);
             } else {
                 fprintf(stderr, "accept failed: %s\n", strerror(errno));
             }
         }
 
-        for (z = 0; z < num_domains; z++) {
-            struct client *client = domains[z].clients;
+        for (z = 0; z < host.num_domains; z++) {
+            struct client *client = host.domains[z].clients;
             unsigned w;
 
-            for (w = 0; w < domains[z].num_clients; w++, client++) {
+            for (w = 0; w < host.domains[z].num_clients; w++, client++) {
                 if (FD_ISSET(client->sockfd, &rfds))
                     client_data_available(client);
             }
@@ -757,9 +762,9 @@ int main(int argc, char **argv) {
     /* cleanup */
     close(sockfd);
 
-    for (z = 0; z < num_domains; z++)
-        while (domains[z].num_clients > 0)
-            kill_client(&domains[z], 0);
+    for (z = 0; z < host.num_domains; z++)
+        while (host.domains[z].num_clients > 0)
+            kill_client(&host.domains[z], 0);
 
     free_config(&config);
 
