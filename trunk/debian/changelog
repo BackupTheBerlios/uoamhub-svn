@@ -8,6 +8,7 @@ uoamhub (0.9.1) unstable; urgency=low
   * enable SO_KEEPALIVE
   * ignore SIGPIPE and SIGALRM
   * check password on every data packet
+  * made CC auto detection more portable
 
  --
 
