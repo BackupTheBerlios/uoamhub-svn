@@ -250,6 +250,13 @@ static void dump_packet(FILE *file, unsigned char *data, size_t length) {
     }
 }
 
+static uint32_t read_uint32(unsigned char *buffer) {
+    return buffer[0] |
+        buffer[1] << 8 |
+        buffer[2] << 16 |
+        buffer[3] << 24;
+}
+
 static void write_uint32(unsigned char *buffer, uint32_t value) {
     buffer[0] = value & 0xff;
     buffer[1] = (value >> 8) & 0xff;
@@ -257,13 +264,13 @@ static void write_uint32(unsigned char *buffer, uint32_t value) {
     buffer[3] = (value >> 24) & 0xff;
 }
 
-static void respond(struct client *client, unsigned char *request,
+static void respond(struct client *client, unsigned sequence,
                     unsigned char *response, size_t response_length) {
     assert(response_length >= 16);
     assert(response[2] != 0x02 || response_length >= 24);
 
     /* copy packet sequence number */
-    memcpy(response + 12, request + 12, 4);
+    write_uint32(response + 12, (uint32_t)sequence);
 
     /* write the packet length */
     write_uint32(response + 8, (uint32_t)response_length);
@@ -394,6 +401,7 @@ int main(int argc, char **argv) {
                         unsigned char buffer[4096], buffer2[4096];
                         ssize_t nbytes;
                         struct packet_header *header = (struct packet_header*)buffer;
+                        unsigned sequence;
 
                         nbytes = recv(client->sockfd, buffer, sizeof(buffer), 0);
                         if (verbose >= 4) {
@@ -420,10 +428,12 @@ int main(int argc, char **argv) {
                             continue;
                         }
 
+                        sequence = read_uint32(buffer + 12);
+
                         switch (header->type) {
                         case 0x0b:
                             client->handshake = 1;
-                            respond(client, buffer,
+                            respond(client, sequence,
                                     packet_handshake_response,
                                     sizeof(packet_handshake_response));
                             break;
@@ -452,7 +462,7 @@ int main(int argc, char **argv) {
                                 memset(buffer2 + pos, 0, 4);
                                 pos += 4;
 
-                                respond(client, buffer, buffer2, pos);
+                                respond(client, sequence, buffer2, pos);
                             } else if (buffer[20] == 0x01 && buffer[22] == 0x01) {
                                 /* 01 00 01 00: poll chat */
 
@@ -475,9 +485,9 @@ int main(int argc, char **argv) {
                                     memset(buffer2 + pos, 0, 5);
                                     pos += 5;
 
-                                    respond(client, buffer, buffer2, pos);
+                                    respond(client, sequence, buffer2, pos);
                                 } else {
-                                    respond(client, buffer,
+                                    respond(client, sequence,
                                             packet_ack2,
                                             sizeof(packet_ack2));
                                 }
@@ -487,7 +497,7 @@ int main(int argc, char **argv) {
                                     enqueue_chat(&domains[z], buffer + 60,
                                                  (size_t)nbytes - 60);
 
-                                respond(client, buffer,
+                                respond(client, sequence,
                                         packet_ack,
                                         sizeof(packet_ack));
                             } else {
@@ -495,14 +505,14 @@ int main(int argc, char **argv) {
 
                                 memcpy(&client->info, buffer + 44, sizeof(client->info));
 
-                                respond(client, buffer,
+                                respond(client, sequence,
                                         packet_ack,
                                         sizeof(packet_ack));
                             }
                             break;
 
                         case 0x0e:
-                            respond(client, buffer,
+                            respond(client, sequence,
                                     packet_response2,
                                     sizeof(packet_response2));
                             break;
