@@ -1146,6 +1146,8 @@ static void write_uint32(unsigned char *buffer, uint32_t value) {
 static void respond(struct client *client, unsigned socket_index,
                     unsigned sequence,
                     unsigned char *response, size_t response_length) {
+    ssize_t nbytes;
+
     assert(response_length >= 16);
     assert(response[2] != 0x02 || response_length >= 24);
     assert(socket_index < client->num_sockets);
@@ -1172,7 +1174,15 @@ static void respond(struct client *client, unsigned socket_index,
 #endif
 
     /* send it */
-    send(client->sockets[socket_index], response, response_length, 0);
+    nbytes = send(client->sockets[socket_index], response, response_length, 0);
+
+    if (nbytes < (ssize_t)response_length) {
+        log(1, "send failure, killing connection %s[%u]\n",
+            client->name, socket_index);
+        close(client->sockets[socket_index]);
+        client->sockets[socket_index] = -1;
+        return;
+    }
 
     /* update timeout */
     client->timeout = time(NULL) + 60;
