@@ -474,16 +474,16 @@ static void client_data_available(struct client *client) {
 
     /* read from stream */
     nbytes = recv(client->sockfd, buffer, sizeof(buffer), 0);
-    if (verbose >= 4) {
-        printf("received from client %u\n", client->id);
-        dump_packet(stdout, buffer, (size_t)nbytes);
-        printf("\n");
-    }
-
     if (nbytes <= 0) {
         printf("client %u disconnected\n", client->id);
         client->should_destroy = 1;
         return;
+    }
+
+    if (verbose >= 4) {
+        printf("received from client %u\n", client->id);
+        dump_packet(stdout, buffer, (size_t)nbytes);
+        printf("\n");
     }
 
     while (nbytes > 0) {
