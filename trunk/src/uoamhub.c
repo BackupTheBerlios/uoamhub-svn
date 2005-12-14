@@ -625,6 +625,7 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
             fd_set rfds;
             char buffer[256];
             struct timeval tv;
+            pid_t pid2;
 
             close(fds[1]);
 
@@ -641,8 +642,8 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
                     exit(0);
                 }
 
-                pid = waitpid(pid, &status, WNOHANG);
-            } while (pid <= 0);
+                pid2 = waitpid(pid, &status, WNOHANG);
+            } while (pid2 <= 0);
 
             log(3, "daemon process exited with %d\n",
                 WEXITSTATUS(status));
