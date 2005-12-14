@@ -1,6 +1,6 @@
 uoamhub (0.9.2) unstable; urgency=low
 
-  * 
+  * one bit flags are unsigned
 
  --
 
