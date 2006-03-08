@@ -709,7 +709,8 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
             close(*randomfdp);
 #endif
 
-            execl("/bin/sh", "sh", "-c", config->logger, NULL);
+            execl("/bin/sh", "sh", "-c", config->logger,
+                  (const char*)NULL);
             exit(1);
         }
 
