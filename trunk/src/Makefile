@@ -3,7 +3,7 @@
 # $Id$
 
 # auto-detect a C compiler
-CC := $(shell which gcc-4.0 gcc-3.4 gcc-3.3 gcc cc |grep -v '^no' |head -1 )
+CC := $(shell which gcc-4.0 gcc-3.4 gcc-3.3 gcc cc |grep -v '^no' |grep -v 'not found' |head -1 )
 
 # change the comments to enable the non-debugging version
 CFLAGS = -g -O0

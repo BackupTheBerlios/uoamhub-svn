@@ -3,6 +3,8 @@ uoamhub (0.9.2) unstable; urgency=low
   * one bit flags are unsigned
   * fixed waitpid() call, don't reuse variable
   * explicitly cast execl() sentinel
+  * CC auto detection:
+    - ignore lines containing "not found"
 
  --
 
