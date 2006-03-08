@@ -40,8 +40,8 @@ You need gcc and GNU make. Go to the source directory and type:
 
  make
 
-(Or "gmake" if you are not on Linux). This will result in the binary
-named "uoamhub".
+(Or "gmake CC=gcc" if you are not on Linux).  This will result in the
+binary named "uoamhub".
 
 
 Running
