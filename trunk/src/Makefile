@@ -16,6 +16,10 @@ WARNING_CFLAGS += -W -Wall -D_REENTRANT -std=gnu99 -Wmissing-prototypes -Wwrite-
 
 LDFLAGS =
 
+ifeq ($(CC),)
+$(error No C compiler detected; you could try "$(MAKE) CC=/usr/bin/my_c_compiler")
+endif
+
 ifeq ($(shell uname -s),SunOS)
 LDFLAGS += -lsocket -lnsl
 endif
