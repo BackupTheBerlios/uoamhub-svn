@@ -87,7 +87,7 @@ write the password to a file and tell uoamhub where the file is:
 
  umask 077
  echo topsecret >/tmp/uoampasswd
- uoamhub --password /tmp/uoampasswd
+ ./uoamhub --password /tmp/uoampasswd
 
 
 Links
