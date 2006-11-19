@@ -2,8 +2,7 @@
 # (c) 2004-2006 Max Kellermann <max@duempel.org>
 # $Id: Makefile 140 2006-03-08 14:36:50Z make $
 
-# auto-detect a C compiler
-CC := $(shell which gcc-4.0 gcc-3.4 gcc-3.3 gcc cc |grep -v '^no' |grep -v 'not found' |head -1 )
+CC := gcc
 
 # change the comments to enable the non-debugging version
 CFLAGS = -g -O0
