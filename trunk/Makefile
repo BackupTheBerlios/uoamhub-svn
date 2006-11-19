@@ -4,9 +4,14 @@
 
 CC := gcc
 
-# change the comments to enable the non-debugging version
-CFLAGS = -g -O0
-#CFLAGS = -Os -DNDEBUG=1
+# change this value to 'yes' to enable the debugging version
+DEBUG = no
+
+ifeq ($(DEBUG),yes)
+CFLAGS += -g -O0
+else
+CFLAGS = -O3 -DNDEBUG=1
+endif
 
 # uncomment this to enable the micro edition (16 kB binary size stripped)
 #FEATURE_CFLAGS += -DDISABLE_DAEMON_CODE=1 -DDISABLE_LOGGING=1
