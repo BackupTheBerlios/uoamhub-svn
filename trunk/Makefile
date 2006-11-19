@@ -9,8 +9,10 @@ DEBUG = no
 
 ifeq ($(DEBUG),yes)
 CFLAGS += -g -O0
+LDFLAGS = -g -O0
 else
 CFLAGS = -O3 -DNDEBUG=1
+LDFLAGS = -O3
 endif
 
 # uncomment this to enable the micro edition (16 kB binary size stripped)
@@ -21,8 +23,6 @@ WARNING_CFLAGS += -W -Wall -D_REENTRANT -std=gnu99 -Wmissing-prototypes -Wwrite-
 else
 WARNING_CFLAGS += -std=gnu99
 endif
-
-LDFLAGS =
 
 ifeq ($(CC),)
 $(error No C compiler detected; you could try "$(MAKE) CC=/usr/bin/my_c_compiler")
