@@ -1748,12 +1748,6 @@ int main(int argc, char **argv) {
                     continue;
                 }
 
-                if (client->num_sockets == 0) {
-                    log(1, "client %s disconnected\n", client->name);
-                    kill_client(client);
-                    continue;
-                }
-
                 if (now > client->timeout) {
                     log(1, "timeout on client %s\n", client->name);
                     kill_client(client);
@@ -1770,6 +1764,12 @@ int main(int argc, char **argv) {
                         if (client->sockets[z] > max_fd)
                             max_fd = client->sockets[z];
                     }
+                }
+
+                if (client->num_sockets == 0) {
+                    log(1, "client %s disconnected\n", client->name);
+                    kill_client(client);
+                    continue;
                 }
             }
 

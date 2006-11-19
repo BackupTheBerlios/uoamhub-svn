@@ -3,6 +3,7 @@ uoamhub (0.9.2) unstable; urgency=low
   * one bit flags are unsigned
   * fixed waitpid() call, don't reuse variable
   * explicitly cast execl() sentinel
+  * check for client disconnect after removing stale sockets
 
  --
 
