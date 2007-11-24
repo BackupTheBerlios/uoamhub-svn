@@ -28,6 +28,7 @@
 #include "config.h"
 #include "version.h"
 #include "log.h"
+#include "protocol.h"
 
 #include <assert.h>
 #include <sys/types.h>
@@ -48,20 +49,6 @@
 
 /** set by the signal handler to tell the main loop to exit */
 static volatile int should_exit = 0;
-
-struct noip_player_info {
-    char name[64];
-    unsigned char reserved[12];
-    unsigned char position[16];
-};
-
-/** this structure is sent by the client in position update packets */
-struct player_info {
-    /** the internal client's IP address, not affected by NAT */
-    unsigned char ip[4];
-    /** public client info */
-    struct noip_player_info noip;
-};
 
 /** an item in the chat queue */
 struct chat {
