@@ -42,13 +42,14 @@ endif
 
 SOURCES = src/uoamhub.c src/log.c
 OBJECTS = $(patsubst %.c,%.o,$(SOURCES))
+HEADERS = $(wildcard src/*.h)
 
 all: src/uoamhub
 
 clean:
 	rm -f src/uoamhub
 
-$(OBJECTS): %.o: %.c
+$(OBJECTS): %.o: %.c $(HEADERS)
 	$(CC) -c $< -o $@ $(CFLAGS) $(WARNING_CFLAGS) $(FEATURE_CFLAGS)
 
 src/uoamhub: $(OBJECTS)
