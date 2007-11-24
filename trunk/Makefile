@@ -40,7 +40,8 @@ FEATURE_CFLAGS += -DHAVE_DEV_RANDOM -DRANDOM_DEVICE=\"/dev/random\"
 endif
 endif
 
-SOURCES = src/uoamhub.c src/log.c
+SOURCES = src/uoamhub.c src/log.c \
+	src/config.c src/cmdline.c
 OBJECTS = $(patsubst %.c,%.o,$(SOURCES))
 HEADERS = $(wildcard src/*.h)
 
