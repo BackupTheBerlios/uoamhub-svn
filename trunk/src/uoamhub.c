@@ -1,8 +1,7 @@
 /*
  * uoamhub
- * $Id$
  *
- * (c) 2004-2005 Max Kellermann <max@duempel.org>
+ * (c) 2004-2007 Max Kellermann <max@duempel.org>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -25,6 +24,8 @@
  * Home page: http://max.kellermann.name/projects/uoamhub/
  *
  */
+
+#include "version.h"
 
 #include <assert.h>
 #include <sys/types.h>
@@ -76,9 +77,6 @@
 
 /** length of the chat queue per client */
 #define MAX_CHATS 64
-
-/** version number of this software */
-static const char VERSION[] = "0.9.2";
 
 #ifndef DISABLE_LOGGING
 /** verbosity - increasing this will trash the screen */
