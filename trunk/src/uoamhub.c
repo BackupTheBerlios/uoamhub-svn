@@ -384,30 +384,6 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
 #endif /* DISABLE_DAEMON_CODE */
 }
 
-/** move a bound client to another domain */
-static int move_client(struct client *client, struct domain *domain) {
-    int ret;
-    struct domain *old_domain = client->domain;
-
-    assert(client != NULL);
-    assert(client->domain != NULL);
-    assert(domain != NULL);
-    assert(client->domain->host == domain->host);
-
-    if (client->domain == domain)
-        return 1;
-
-    remove_client(client);
-    ret = add_client(domain, client);
-    if (!ret) {
-        log(1, "domain '%s' is full\n", domain->password);
-        add_client(old_domain, client);
-        return 0;
-    }
-
-    return 1;
-}
-
 /** enqueue a chat packet in a client structure */
 static void enqueue_client_chat(struct client *client,
                                 const void *data, size_t size) {

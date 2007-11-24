@@ -83,6 +83,10 @@ create_client(struct domain *domain, int sockfd,
 #endif
               int randomfd);
 
+/** move a bound client to another domain */
+int
+move_client(struct client *client, struct domain *domain);
+
 /** merge two clients */
 int
 append_client(struct client *dest, struct client *src, unsigned *socket_index);
