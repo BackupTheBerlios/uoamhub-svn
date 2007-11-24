@@ -73,11 +73,6 @@
 /** length of the chat queue per client */
 #define MAX_CHATS 64
 
-#ifndef DISABLE_LOGGING
-/** verbosity - increasing this will trash the screen */
-static int verbose = 1;
-#endif
-
 /** set by the signal handler to tell the main loop to exit */
 static volatile int should_exit = 0;
 

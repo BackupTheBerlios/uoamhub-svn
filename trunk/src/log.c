@@ -18,18 +18,9 @@
  *
  */
 
-#ifndef __UOAMHUB_LOG_H
-#define __UOAMHUB_LOG_H
-
-#ifdef DISABLE_LOGGING
-#define log(level, ...)
-#else
-#define log(level, ...) do { if (verbose >= (level)) { printf(__VA_ARGS__); fflush(stdout); } } while (0)
-#endif
+#include "log.h"
 
 #ifndef DISABLE_LOGGING
 /** verbosity - increasing this will trash the screen */
-extern int verbose;
-#endif
-
+int verbose = 1;
 #endif

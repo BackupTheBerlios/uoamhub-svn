@@ -45,7 +45,7 @@ all: src/uoamhub
 clean:
 	rm -f src/uoamhub
 
-src/uoamhub: src/uoamhub.c
+src/uoamhub: src/uoamhub.c src/log.c
 	$(CC) $(CFLAGS) $(WARNING_CFLAGS) $(FEATURE_CFLAGS) $(LDFLAGS) -o $@ $^
 
 strip: src/uoamhub
