@@ -40,12 +40,14 @@ FEATURE_CFLAGS += -DHAVE_DEV_RANDOM -DRANDOM_DEVICE=\"/dev/random\"
 endif
 endif
 
+SOURCES = src/uoamhub.c src/log./c
+
 all: src/uoamhub
 
 clean:
 	rm -f src/uoamhub
 
-src/uoamhub: src/uoamhub.c src/log.c
+src/uoamhub: $(SOURCES)
 	$(CC) $(CFLAGS) $(WARNING_CFLAGS) $(FEATURE_CFLAGS) $(LDFLAGS) -o $@ $^
 
 strip: src/uoamhub
