@@ -41,6 +41,7 @@ endif
 endif
 
 SOURCES = src/uoamhub.c src/log.c \
+	src/domain.c src/client.c \
 	src/config.c src/cmdline.c
 OBJECTS = $(patsubst %.c,%.o,$(SOURCES))
 HEADERS = $(wildcard src/*.h)
