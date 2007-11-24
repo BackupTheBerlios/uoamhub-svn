@@ -31,6 +31,7 @@
 #include "protocol.h"
 #include "client.h"
 #include "domain.h"
+#include "host.h"
 
 #include <assert.h>
 #include <sys/types.h>
@@ -56,17 +57,6 @@ static volatile int should_exit = 0;
 struct chat {
     size_t size;
     char data[1];
-};
-
-/** a host - currently only one host is supported, so this is a
-    singleton */
-struct host {
-    /** configuration of this host */
-    const struct config *config;
-    /** pointer to the first domain */
-    struct domain *domains_head;
-    /** number of domains */
-    unsigned num_domains;
 };
 
 /*
@@ -392,53 +382,6 @@ static void setup(struct config *config, int *randomfdp, int *sockfdp) {
         close(loggerfd);
     }
 #endif /* DISABLE_DAEMON_CODE */
-}
-
-/** find a client with the specified id on the whole host (all
-    domains) */
-static struct client *get_client(struct host *host, uint32_t id) {
-    struct domain *domain = host->domains_head;
-
-    if (domain == NULL)
-        return NULL;
-
-    do {
-        struct client *client = domain->clients_head;
-
-        assert(domain->host == host);
-
-        if (client != NULL) {
-            do {
-                assert(client->domain == domain);
-
-                if (client->id == id)
-                    return client;
-
-                client = client->next;
-            } while (client != domain->clients_head);
-        }
-
-        domain = domain->next;
-    } while (domain != host->domains_head);
-
-    return NULL;
-}
-
-/** find a domain by its password */
-static struct domain *get_domain(struct host *host, const char *password) {
-    struct domain *domain = host->domains_head;
-
-    if (domain == NULL)
-        return NULL;
-
-    do {
-        if (strcmp(password, domain->password) == 0)
-            return domain;
-
-        domain = domain->next;
-    } while (domain != host->domains_head);
-
-    return NULL;
 }
 
 /** create a domain and add it to the host */
