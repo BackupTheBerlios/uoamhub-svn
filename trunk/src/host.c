@@ -29,25 +29,17 @@ struct client *
 get_client(struct host *host, uint32_t id)
 {
     struct domain *domain = host->domains_head;
+    struct client *client;
 
     if (domain == NULL)
         return NULL;
 
     do {
-        struct client *client = domain->clients_head;
-
         assert(domain->host == host);
 
-        if (client != NULL) {
-            do {
-                assert(client->domain == domain);
-
-                if (client->id == id)
-                    return client;
-
-                client = client->next;
-            } while (client != domain->clients_head);
-        }
+        client = domain_get_client(domain, id);
+        if (client != NULL)
+            return client;
 
         domain = domain->next;
     } while (domain != host->domains_head);

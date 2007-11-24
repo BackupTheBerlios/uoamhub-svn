@@ -24,6 +24,26 @@
 
 #include <assert.h>
 
+struct client *
+domain_get_client(struct domain *domain, uint32_t id)
+{
+    struct client *client = domain->clients_head;
+
+    if (client == NULL)
+        return NULL;
+
+    do {
+        assert(client->domain == domain);
+
+        if (client->id == id)
+            return client;
+
+        client = client->next;
+    } while (client != domain->clients_head);
+
+    return NULL;
+}
+
 int
 add_client(struct domain *domain, struct client *client)
 {

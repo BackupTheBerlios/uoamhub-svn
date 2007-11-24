@@ -21,6 +21,8 @@
 #ifndef __UOAMHUB_DOMAIN_H
 #define __UOAMHUB_DOMAIN_H
 
+#include <stdint.h>
+
 struct host;
 struct client;
 
@@ -38,6 +40,9 @@ struct domain {
     /** number of clients */
     unsigned num_clients;
 };
+
+struct client *
+domain_get_client(struct domain *domain, uint32_t id);
 
 /** add an unbound client to a domain; fails if the domain is full */
 int
