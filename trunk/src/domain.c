@@ -21,8 +21,59 @@
 #include "domain.h"
 #include "client.h"
 #include "config.h"
+#include "host.h"
+#include "log.h"
 
 #include <assert.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+
+struct domain *
+create_domain(struct host *host, const char *password)
+{
+    size_t password_len;
+    struct domain *domain;
+
+    password_len = strlen(password);
+    if (password_len >= sizeof(domain->password)) {
+        log(1, "password too long: %u\n", (unsigned)password_len);
+        return NULL;
+    }
+
+    if (host_domains_full(host)) {
+        log(1, "domain table is full: %u\n", host->num_domains);
+        return NULL;
+    }
+
+    domain = calloc(1, sizeof(*domain));
+    if (domain == NULL)
+        return NULL;
+
+    memcpy(domain->password, password, password_len);
+
+    host_add_domain(host, domain);
+
+    log(2, "created domain '%s'\n", password);
+
+    return domain;
+}
+
+void
+kill_domain(struct domain *domain)
+{
+    assert(domain != NULL);
+    assert(domain->host != NULL);
+
+    log(2, "killing domain '%s'\n", domain->password);
+
+    while (domain->num_clients > 0)
+        kill_client(domain->clients_head->prev);
+
+    host_remove_domain(domain->host, domain);
+
+    free(domain);
+}
 
 struct client *
 domain_get_client(struct domain *domain, uint32_t id)

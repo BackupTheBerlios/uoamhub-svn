@@ -41,6 +41,14 @@ struct domain {
     unsigned num_clients;
 };
 
+/** create a domain and add it to the host */
+struct domain *
+create_domain(struct host *host, const char *password);
+
+/** kill a domain and remove it from the host */
+void
+kill_domain(struct domain *domain);
+
 struct client *
 domain_get_client(struct domain *domain, uint32_t id);
 

@@ -34,6 +34,15 @@ struct host {
     unsigned num_domains;
 };
 
+int
+host_domains_full(struct host *host);
+
+void
+host_add_domain(struct host *host, struct domain *domain);
+
+void
+host_remove_domain(struct host *host, struct domain *domain);
+
 /** find a client with the specified id on the whole host (all
     domains) */
 struct client *
