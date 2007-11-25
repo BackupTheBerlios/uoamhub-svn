@@ -41,21 +41,7 @@ host_add_domain(struct host *host, struct domain *domain)
 
     domain->host = host;
 
-    if (host->domains_head == NULL) {
-        assert(host->num_domains == 0);
-
-        domain->prev = domain;
-        domain->next = domain;
-        host->domains_head = domain;
-    } else {
-        assert(host->num_domains > 0);
-
-        domain->prev = host->domains_head->prev;
-        domain->next = host->domains_head;
-
-        host->domains_head->prev->next = domain;
-        host->domains_head->prev = domain;
-    }
+    list_add(&domain->siblings, &host->domains);
 
     host->num_domains++;
 }
@@ -66,43 +52,30 @@ host_remove_domain(struct host *host, struct domain *domain)
     assert(host != NULL);
     assert(domain != NULL);
     assert(domain->host == host);
+    assert(host->num_domains > 0);
 
     domain->host = NULL;
 
     host->num_domains--;
 
-    if (host->num_domains == 0) {
-        assert(domain->next == domain);
-        assert(domain->prev == domain);
-
-        host->domains_head = NULL;
-    } else {
-        if (domain == host->domains_head)
-            host->domains_head = domain->next;
-
-        domain->next->prev = domain->prev;
-        domain->prev->next = domain->next;
-    }
+    list_remove(&domain->siblings);
 }
 
 struct client *
 get_client(struct host *host, uint32_t id)
 {
-    struct domain *domain = host->domains_head;
+    struct domain *domain;
     struct client *client;
 
-    if (domain == NULL)
-        return NULL;
-
-    do {
+    for (domain = (struct domain*)host->domains.next;
+         domain != (struct domain*)&host->domains;
+         domain = (struct domain*)domain->siblings.next) {
         assert(domain->host == host);
 
         client = domain_get_client(domain, id);
         if (client != NULL)
             return client;
-
-        domain = domain->next;
-    } while (domain != host->domains_head);
+    }
 
     return NULL;
 }
@@ -110,17 +83,16 @@ get_client(struct host *host, uint32_t id)
 struct domain *
 get_domain(struct host *host, const char *password)
 {
-    struct domain *domain = host->domains_head;
+    struct domain *domain;
 
-    if (domain == NULL)
-        return NULL;
+    for (domain = (struct domain*)host->domains.next;
+         domain != (struct domain*)&host->domains;
+         domain = (struct domain*)domain->siblings.next) {
+        assert(domain->host == host);
 
-    do {
         if (strcmp(password, domain->password) == 0)
             return domain;
-
-        domain = domain->next;
-    } while (domain != host->domains_head);
+    }
 
     return NULL;
 }

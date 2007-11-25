@@ -21,15 +21,21 @@
 #ifndef __UOAMHUB_HOST_H
 #define __UOAMHUB_HOST_H
 
+#include "list.h"
+
 #include <stdint.h>
+
+struct domain;
 
 /** a host - currently only one host is supported, so this is a
     singleton */
 struct host {
     /** configuration of this host */
     const struct config *config;
+
     /** pointer to the first domain */
-    struct domain *domains_head;
+    struct list_head domains;
+
     /** number of domains */
     unsigned num_domains;
 };

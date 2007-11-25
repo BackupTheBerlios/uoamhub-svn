@@ -21,6 +21,8 @@
 #ifndef __UOAMHUB_DOMAIN_H
 #define __UOAMHUB_DOMAIN_H
 
+#include "list.h"
+
 #include <stdint.h>
 
 struct host;
@@ -29,14 +31,16 @@ struct client;
 /** a domain - all clients who chose the same password are in the same
     domain and can see each others */
 struct domain {
-    /** doubly linked list */
-    struct domain *prev, *next;
+    struct list_head siblings;
+
     /** password of this domain */
     char password[20];
     /** the host this domain belongs to */
     struct host *host;
+
     /** pointer to the first client */
-    struct client *clients_head;
+    struct list_head clients;
+
     /** number of clients */
     unsigned num_clients;
 };

@@ -23,6 +23,7 @@
 
 #include "protocol.h"
 #include "config.h"
+#include "list.h"
 
 #include <stdint.h>
 #include <sys/socket.h>
@@ -32,8 +33,8 @@ struct domain;
 
 /** a client, which may consist of more than one socket */
 struct client {
-    /** doubly linked list */
-    struct client *prev, *next;
+    struct list_head siblings;
+
 #ifndef DISABLE_LOGGING
     /** socket address */
     struct sockaddr address;

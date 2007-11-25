@@ -51,6 +51,7 @@ create_domain(struct host *host, const char *password)
         return NULL;
 
     memcpy(domain->password, password, password_len);
+    list_init(&domain->clients);
 
     host_add_domain(host, domain);
 
@@ -67,8 +68,10 @@ kill_domain(struct domain *domain)
 
     log(2, "killing domain '%s'\n", domain->password);
 
-    while (domain->num_clients > 0)
-        kill_client(domain->clients_head->prev);
+    while (!list_empty(&domain->clients))
+        kill_client((struct client*)domain->clients.next);
+
+    assert(domain->num_clients == 0);
 
     host_remove_domain(domain->host, domain);
 
@@ -78,19 +81,16 @@ kill_domain(struct domain *domain)
 struct client *
 domain_get_client(struct domain *domain, uint32_t id)
 {
-    struct client *client = domain->clients_head;
+    struct client *client;
 
-    if (client == NULL)
-        return NULL;
-
-    do {
+    for (client = (struct client*)domain->clients.next;
+         client != (struct client*)&domain->clients;
+         client = (struct client*)client->siblings.next) {
         assert(client->domain == domain);
 
         if (client->id == id)
             return client;
-
-        client = client->next;
-    } while (client != domain->clients_head);
+    }
 
     return NULL;
 }
@@ -103,20 +103,7 @@ add_client(struct domain *domain, struct client *client)
     if (domain->num_clients >= MAX_CLIENTS)
         return 0;
 
-    if (domain->clients_head == NULL) {
-        assert(domain->num_clients == 0);
-
-        client->next = client;
-        client->prev = client;
-        domain->clients_head = client;
-    } else {
-        assert(domain->num_clients > 0);
-
-        client->prev = domain->clients_head->prev;
-        client->next = domain->clients_head;
-        client->prev->next = client;
-        client->next->prev = client;
-    }
+    list_add(&client->siblings, &domain->clients);
 
     domain->num_clients++;
     client->domain = domain;
@@ -132,17 +119,7 @@ remove_client(struct client *client)
 
     client->domain->num_clients--;
 
-    if (client->domain->num_clients == 0) {
-        client->domain->clients_head = NULL;
-    } else {
-        client->prev->next = client->next;
-        client->next->prev = client->prev;
+    list_remove(&client->siblings);
 
-        if (client->domain->clients_head == client)
-            client->domain->clients_head = client->next;
-    }
-
-    client->prev = NULL;
-    client->next = NULL;
     client->domain = NULL;
 }

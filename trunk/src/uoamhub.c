@@ -405,18 +405,14 @@ static void enqueue_client_chat(struct client *client,
 /** broadcast a chat packet to all clients in a domain */
 static void enqueue_chat(struct domain *domain,
                          const void *data, size_t size) {
-    struct client *client = domain->clients_head;
+    struct client *client;
 
     assert(size <= 2048);
 
-    if (client == NULL)
-        return;
-
-    do {
+    for (client = (struct client*)domain->clients.next;
+         client != (struct client*)&domain->clients;
+         client = (struct client*)client->siblings.next)
         enqueue_client_chat(client, data, size);
-
-        client = client->next;
-    } while (client != domain->clients_head);
 }
 
 #ifndef DISABLE_LOGGING
@@ -545,27 +541,24 @@ static void handle_query_list(struct client *client, unsigned socket_index,
                               unsigned sequence) {
     struct domain *domain = client->domain;
     unsigned char buffer[4096];
-    size_t pos;
+    size_t pos, max_pos;
     unsigned num = 0;
+    struct client *client2;
 
     memcpy(buffer, header_list, sizeof(header_list));
     pos = sizeof(header_list);
+    max_pos = sizeof(buffer) - sizeof(client->info.noip) - 4;
 
-    if (domain->clients_head != NULL) {
-        struct client *client2 = domain->clients_head;
-        const size_t max_pos = sizeof(buffer) - sizeof(client->info.noip) - 4;
-
-        do {
-            if (client2->info.noip.name[0] != 0 &&
-                !client2->should_destroy) {
-                memcpy(buffer + pos, &client2->info.noip,
-                       sizeof(client2->info.noip));
-                num++;
-                pos += sizeof(client2->info.noip);
-            }
-
-            client2 = client2->next;
-        } while (pos <= max_pos && client2 != domain->clients_head);
+    for (client2 = (struct client*)domain->clients.next;
+         pos <= max_pos && client2 != (struct client*)&domain->clients;
+         client2 = (struct client*)client2->siblings.next) {
+        if (client2->info.noip.name[0] != 0 &&
+            !client2->should_destroy) {
+            memcpy(buffer + pos, &client2->info.noip,
+                   sizeof(client2->info.noip));
+            num++;
+            pos += sizeof(client2->info.noip);
+        }
     }
 
     write_uint32(buffer + 24, (uint32_t)num);
@@ -580,17 +573,19 @@ static void handle_query_list(struct client *client, unsigned socket_index,
 /** send font info of all clients in this domain to the new client */
 static void resend_fonts(struct client *client) {
     struct domain *domain = client->domain;
-    struct client *p = domain->clients_head;
+    struct client *p;
 
     assert(p != NULL);
 
-    do {
+    for (p = (struct client*)domain->clients.next;
+         p != (struct client*)&domain->clients;
+         p = (struct client*)p->siblings.next) {
         assert(p->domain == domain);
 
         if (p != client && p->font_buffer != NULL &&
             p->font_buffer_size > 0)
             enqueue_client_chat(client, p->font_buffer, p->font_buffer_size);
-    } while (p != domain->clients_head);
+    }
 }
 
 /** checks the password and tries to log the client in; creates a new
@@ -967,6 +962,7 @@ int main(int argc, char **argv) {
     /* create domain 0 */
     memset(&host, 0, sizeof(host));
     host.config = &config;
+    list_init(&host.domains);
 
     domain_zero = create_domain(&host, "");
     if (domain_zero == NULL) {
@@ -987,30 +983,30 @@ int main(int argc, char **argv) {
         FD_SET(sockfd, &rfds);
         max_fd = sockfd;
 
-        domain = host.domains_head;
-        assert(domain == domain_zero);
+        for (domain = (struct domain*)host.domains.next;
+             domain != (struct domain*)&host.domains;
+             domain = (struct domain*)domain->siblings.next) {
+            struct client *client;
 
-        do {
-            struct client *client, *next_client = domain->clients_head;
-
-            while (next_client != NULL) {
+            for (client = (struct client*)domain->clients.next;
+                 client != (struct client*)&domain->clients;
+                 client = (struct client*)client->siblings.next) {
                 int z;
-
-                client = next_client;
-                next_client = client->next;
-                if (next_client == domain->clients_head)
-                    next_client = NULL;
 
                 assert(client->domain == domain);
 
                 if (client->should_destroy) {
-                    kill_client(client);
+                    struct client *client2 = client;
+                    client = (struct client*)client->siblings.prev;
+                    kill_client(client2);
                     continue;
                 }
 
                 if (now > client->timeout) {
+                    struct client *client2 = client;
                     log(1, "timeout on client %s\n", client->name);
-                    kill_client(client);
+                    client = (struct client*)client->siblings.prev;
+                    kill_client(client2);
                     continue;
                 }
 
@@ -1027,22 +1023,22 @@ int main(int argc, char **argv) {
                 }
 
                 if (client->num_sockets == 0) {
+                    struct client *client2 = client;
                     log(1, "client %s disconnected\n", client->name);
-                    kill_client(client);
+                    client = (struct client*)client->siblings.prev;
+                    kill_client(client2);
                     continue;
                 }
             }
 
             if (domain != domain_zero && domain->num_clients == 0) {
                 /* empty domain, delete it */
-                domain = domain->next;
-                kill_domain(domain->prev);
-                assert(host.domains_head == domain_zero);
+                struct domain *domain2 = domain;
+                domain = (struct domain*)domain->siblings.prev;
+                kill_domain(domain2);
                 continue;
             }
-
-            domain = domain->next;
-        } while (domain != host.domains_head);
+        }
 
         ret = select(max_fd + 1, &rfds, NULL, NULL, NULL);
         if (ret < 0) {
@@ -1075,19 +1071,15 @@ int main(int argc, char **argv) {
             }
         }
 
-        domain = host.domains_head;
-        assert(domain == domain_zero);
+        for (domain = (struct domain*)host.domains.next;
+             domain != (struct domain*)&host.domains;
+             domain = (struct domain*)domain->siblings.next) {
+            struct client *client;
 
-        do {
-            struct client *client, *next_client = domain->clients_head;
-
-            while (next_client != NULL) {
+            for (client = (struct client*)domain->clients.next;
+                 client != (struct client*)&domain->clients;
+                 client = (struct client*)client->siblings.next) {
                 unsigned z;
-
-                client = next_client;
-                next_client = client->next;
-                if (next_client == domain->clients_head)
-                    next_client = NULL;
 
                 assert(client->domain == domain);
 
@@ -1101,16 +1093,14 @@ int main(int argc, char **argv) {
                     }
                 }
             }
-
-            domain = domain->next;
-        } while (domain != host.domains_head);
+        }
     } while (!should_exit);
 
     /* cleanup */
     close(sockfd);
 
     while (host.num_domains > 0)
-        kill_domain(host.domains_head->prev);
+        kill_domain((struct domain*)host.domains.next);
 
     free_config(&config);
 
