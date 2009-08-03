@@ -94,7 +94,7 @@ create_client(struct domain *domain, int sockfd,
         return NULL;
 
 #ifndef DISABLE_LOGGING
-    if (addrlen > sizeof(client->address))
+    if ((size_t)addrlen > sizeof(client->address))
         addrlen = sizeof(client->address);
     memcpy(&client->address, addr, addrlen);
 #endif /* DISABLE_LOGGING */
